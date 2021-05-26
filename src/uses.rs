@@ -116,6 +116,36 @@ fn paths_from_use_tree(tree: &UseTree) -> Vec<UsePath> {
     }
 }
 
+/// Qualifies the paths in the child using the paths in the parent.
+///
+/// Consider the following code (in a file):
+///
+/// ```no_run
+/// use std::fs;
+/// use std::path::Path;
+///
+/// fn foo<U: AsRef<Path>>(path: U) {
+///     use fs::File;
+///     let file = File::open(path);
+/// }
+/// ```
+///
+/// The use statement in the function `foo()` works only because
+/// the global `use std::fs`. However, the global and the block
+/// uses are extracted separately. This function will combine the
+/// local uses with the global uses to convert `use fs::File` to
+/// `use std::fs::File`.
+///
+/// This function performs this step for only consecutive blocks,
+/// so if there is another level of scoping, the function needs to be run
+/// twice.
+///
+/// Also, this function expands *only* the paths in `child`.
+fn extend_path_once(parent: &Vec<UsePath>, child: &Vec<UsePath>) -> Vec<UsePath> {
+    // TODO: Add an error type and change the return type to a result
+    todo!()
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
