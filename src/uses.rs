@@ -1,4 +1,4 @@
-use syn::{File, Item, UseTree};
+use syn::{Block, File, Item, Stmt, UseTree};
 
 /// A full use path, referring to a single module, function, struct or const.
 /// Since, sometimes use statements are written in a way that require use to know
@@ -61,6 +61,25 @@ pub fn extract_global_uses(file: &File) -> Vec<UsePath> {
             } else {
                 None
             }
+        })
+        .flatten()
+        .collect()
+}
+
+/// Extracts a list of top level uses in a Block.
+/// So it doesn't recurse into sub-blocks, only the top level ones are
+/// returned.
+pub fn extract_block_uses(block: &Block) -> Vec<UsePath> {
+    block
+        .stmts
+        .iter()
+        .filter_map(|stmt| {
+            if let Stmt::Item(item) = stmt {
+                if let Item::Use(use_item) = item {
+                    return Some(paths_from_use_tree(&use_item.tree));
+                }
+            }
+            None
         })
         .flatten()
         .collect()
@@ -187,5 +206,31 @@ use std::fs::*;
         .map(|x| convert_to_path(x).unwrap())
         .collect();
         assert_eq!(use_paths, expected_use_paths);
+    }
+
+    #[test]
+    fn test_block_uses() {
+        let source = "
+use std::path::Path;
+use std::fs;
+
+fn foo<U: AsRef<Path>>(p: U) {
+    use fs::*;
+    let x = File::open(p.as_ref());
+    use std::path::PathBuf;
+}
+";
+        let file = syn::parse_file(&source).unwrap();
+        if let Item::Fn(fn_item) = &file.items[2] {
+            let use_paths = extract_block_uses(fn_item.block.as_ref());
+            let expected_use_paths: Vec<UsePath> =
+                vec![vec!["fs", "*"], vec!["std", "path", "PathBuf"]]
+                    .iter()
+                    .map(|x| convert_to_path(x).unwrap())
+                    .collect();
+            assert_eq!(use_paths, expected_use_paths);
+        } else {
+            panic!("Code parsed incorrectly");
+        }
     }
 }
