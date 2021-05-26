@@ -8,4 +8,3 @@ edition = "2018"
 
 [dependencies]
 syn = {version = "1.0.72", features = ["full", "extra-traits"]}
-tokio = {version = "1.6.0", features = ["full"]}
