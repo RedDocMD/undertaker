@@ -1,2 +1,2 @@
-mod imports;
 mod resource;
+mod uses;
