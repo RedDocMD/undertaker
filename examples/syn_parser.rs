@@ -1,7 +1,7 @@
 use std::io::prelude::*;
 use std::{env, fs::File, process};
 
-use syn::Item;
+use syn::{Expr, Item, ItemFn, Stmt};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -19,9 +19,56 @@ fn main() {
 
     for item in ast.items {
         if let Item::Fn(func) = item {
-            let sig = func.sig;
+            let sig = &func.sig;
             if sig.ident.to_string() == String::from("main") {
-                println!("Found main");
+                handle_main(&func);
+                break;
+            }
+        }
+    }
+}
+
+fn handle_main(func: &ItemFn) {
+    let stmts = &func.block.stmts;
+    // Trying to find statements of the form "let <iden> = <struct_name>::new(...);"
+    for stmt in stmts {
+        if let Stmt::Local(local) = stmt {
+            if let Some((_, expr)) = &local.init {
+                if let Expr::Call(call_expr) = expr.as_ref() {
+                    if let Expr::Path(call_path) = call_expr.func.as_ref() {
+                        let path = &call_path.path;
+                        if path.leading_colon.is_none() {
+                            let segs: Vec<String> = path
+                                .segments
+                                .iter()
+                                .map(|seg| seg.ident.to_string())
+                                .collect();
+                            if segs == vec!["oneshot", "channel"] {
+                                println!("Oneshot channel");
+                                use syn::Pat::*;
+                                match &local.pat {
+                                    Tuple(tup) => {
+                                        for part in tup.elems.iter() {
+                                            if let Ident(ident) = part {
+                                                println!("{}", ident.ident);
+                                            }
+                                        }
+                                    }
+                                    _ => println!("{:?}", local.pat),
+                                }
+                            } else if segs == vec!["Arc", "new"] || segs == vec!["Arc", "clone"] {
+                                println!("Arc:");
+                                use syn::Pat::*;
+                                match &local.pat {
+                                    Ident(ident) => {
+                                        println!("{}", ident.ident);
+                                    }
+                                    _ => println!("{:?}", local.pat),
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
