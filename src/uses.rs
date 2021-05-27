@@ -1,3 +1,5 @@
+use std::fmt::{Display, Formatter, Result as FmtResult};
+
 use syn::{Block, File, Item, Stmt, UseTree};
 
 /// A full use path, referring to a single module, function, struct or const.
@@ -9,10 +11,27 @@ pub struct UsePath {
     components: Vec<UsePathComponent>,
 }
 
-// The parts of a use path.
-// So, use std::fs::* will create 3 parts, Name("std"), Name("fs"), Glob.
-// So, use std::fs::File as StdFile will create 3 parts, Name("std"), Name("fs"),
-// Alias(UsePathComponentAlias {from: "File", to: "StdFile"}).
+impl Display for UsePath {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(
+            f,
+            "{}",
+            self.components
+                .iter()
+                .map(|x| format!("{}", x))
+                .fold(String::new(), |old, x| if old == "" {
+                    x
+                } else {
+                    old + "::" + &x
+                })
+        )
+    }
+}
+
+/// The parts of a use path.
+/// So, use std::fs::* will create 3 parts, Name("std"), Name("fs"), Glob.
+/// So, use std::fs::File as StdFile will create 3 parts, Name("std"), Name("fs"),
+/// Alias(UsePathComponentAlias {from: "File", to: "StdFile"}).
 #[derive(Clone, PartialEq, Eq, Debug)]
 enum UsePathComponent {
     Name(String),
@@ -32,6 +51,17 @@ impl From<&UsePathComponent> for UsePath {
     fn from(component: &UsePathComponent) -> Self {
         Self {
             components: vec![component.clone()],
+        }
+    }
+}
+
+impl Display for UsePathComponent {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        use UsePathComponent::*;
+        match self {
+            Name(name) => write!(f, "{}", name),
+            Alias(alias) => write!(f, "{} as {}", alias.from, alias.to),
+            Glob => write!(f, "*"),
         }
     }
 }
@@ -141,9 +171,74 @@ fn paths_from_use_tree(tree: &UseTree) -> Vec<UsePath> {
 /// twice.
 ///
 /// Also, this function expands *only* the paths in `child`.
-fn extend_path_once(parent: &Vec<UsePath>, child: &Vec<UsePath>) -> Vec<UsePath> {
-    // TODO: Add an error type and change the return type to a result
-    todo!()
+///
+/// **Ambiguities**: Consider the following code:
+///
+/// ```no_run
+/// use std::fs::*;
+/// use std::path::*;
+///
+/// fn bar() {
+///     use Component::*;
+/// }
+/// ```
+///
+/// If we knew the contents of `std::fs` and `std::path` then we would
+/// immediately know that Component belongs to `std::path` and not `std::fs`.
+/// This is how the compiler resolves things. However, we only have syntactic knowledge.
+/// So, we have an *ambiguity*, ie, `use Component::*` will resolve to either
+/// `std::fs::Component::*` or `std::path::Component::*`. This is *not* a problem
+/// since we are guaranteed that there are no actual amiguities, and so while using the `UsePath`,
+/// we will have no problem.
+pub fn extend_path_once(
+    parents: &Vec<UsePath>,
+    children: &Vec<UsePath>,
+) -> Result<Vec<UsePath>, PathExtendFailed> {
+    let mut new_children = Vec::new();
+    for child in children {
+        // First, check for exact match.
+        let mut found_match = false;
+        for parent in parents {
+            if is_exact_parent_of(parent, child) {
+                if !found_match {
+                    found_match = true;
+                    new_children.push(join_paths(parent, child));
+                } else {
+                    return Err(PathExtendFailed(format!(
+                        "Duplicate exact parents found for {}",
+                        child
+                    )));
+                }
+            }
+        }
+        if !found_match {
+            // Then try adding in all the globs
+            parents
+                .iter()
+                .filter(|x| *x.components.last().unwrap() == UsePathComponent::Glob)
+                .for_each(|x| {
+                    new_children.push(join_paths(x, child));
+                });
+        }
+    }
+    Ok(new_children)
+}
+
+#[derive(Debug)]
+pub struct PathExtendFailed(String);
+
+fn is_exact_parent_of(parent: &UsePath, child: &UsePath) -> bool {
+    return parent.components.last() == child.components.first();
+}
+
+fn join_paths(parent: &UsePath, child: &UsePath) -> UsePath {
+    UsePath::from(
+        &parent.components[0..parent.components.len() - 1]
+            .iter()
+            .chain(child.components.iter())
+            .cloned()
+            .collect::<Vec<UsePathComponent>>(),
+    )
 }
 
 #[cfg(test)]
@@ -262,5 +357,49 @@ fn foo<U: AsRef<Path>>(p: U) {
         } else {
             panic!("Code parsed incorrectly");
         }
+    }
+
+    #[test]
+    fn test_extend_paths_unambiguous() {
+        let parents: Vec<UsePath> = vec![vec!["std", "fs", "*"], vec!["std", "path", "Component"]]
+            .iter()
+            .map(|x| convert_to_path(x).unwrap())
+            .collect();
+        let children: Vec<UsePath> = vec![vec!["File,Dumb"], vec!["Component", "*"]]
+            .iter()
+            .map(|x| convert_to_path(x).unwrap())
+            .collect();
+        let extended = extend_path_once(&parents, &children).unwrap();
+        let extended_expected: Vec<UsePath> = vec![
+            vec!["std", "fs", "File,Dumb"],
+            vec!["std", "path", "Component", "*"],
+        ]
+        .iter()
+        .map(|x| convert_to_path(x).unwrap())
+        .collect();
+        assert_eq!(extended, extended_expected);
+    }
+
+    #[test]
+    fn test_extend_paths_ambiguous() {
+        let parents: Vec<UsePath> = vec![vec!["std", "fs", "*"], vec!["std", "path", "*"]]
+            .iter()
+            .map(|x| convert_to_path(x).unwrap())
+            .collect();
+        let children: Vec<UsePath> = vec![vec!["File,Dumb"], vec!["Component", "*"]]
+            .iter()
+            .map(|x| convert_to_path(x).unwrap())
+            .collect();
+        let extended = extend_path_once(&parents, &children).unwrap();
+        let extended_expected: Vec<UsePath> = vec![
+            vec!["std", "fs", "File,Dumb"],
+            vec!["std", "path", "File,Dumb"],
+            vec!["std", "fs", "Component", "*"],
+            vec!["std", "path", "Component", "*"],
+        ]
+        .iter()
+        .map(|x| convert_to_path(x).unwrap())
+        .collect();
+        assert_eq!(extended, extended_expected);
     }
 }
