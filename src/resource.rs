@@ -26,3 +26,13 @@ pub enum Creator {
     Direct(ResourceID),
     Tuple(ResourceID, usize),
 }
+
+/// NestedResource refers to resources like Arc<Notify> or Mutex<Condvar>.
+///
+/// Individually, Arc, Notify, Mutex, Condvar are SingleResources. But to
+/// satisfy the Rust type-system and our own concurrency needs, we need to nest
+/// them.
+pub struct NestedResource {
+    res: SingleResource,
+    rest: Option<Box<NestedResource>>,
+}

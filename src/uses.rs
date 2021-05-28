@@ -241,44 +241,54 @@ fn join_paths(parent: &UsePath, child: &UsePath) -> UsePath {
     )
 }
 
+fn convert_to_path<T: AsRef<str>>(comps: &Vec<T>) -> Option<UsePath> {
+    let parts: Vec<Option<UsePathComponent>> = comps
+        .iter()
+        .map(|s| {
+            if s.as_ref() == "*" {
+                Some(UsePathComponent::Glob)
+            } else if s.as_ref().contains(",") {
+                let words: Vec<&str> = s.as_ref().split(",").map(|s| s.trim()).collect();
+                if words.len() != 2 {
+                    None
+                } else {
+                    Some(UsePathComponent::Alias(UsePathComponentAlias::from_pair(
+                        words[0].clone(),
+                        words[1].clone(),
+                    )))
+                }
+            } else if !s.as_ref().contains(" ") {
+                Some(UsePathComponent::Name(String::from(s.as_ref())))
+            } else {
+                None
+            }
+        })
+        .collect();
+    if parts.iter().any(|item| item.is_none()) {
+        None
+    } else {
+        Some(UsePath::from(
+            &parts
+                .into_iter()
+                .map(|part| part.unwrap())
+                .collect::<Vec<UsePathComponent>>(),
+        ))
+    }
+}
+
+// This is a macro create a path using convert_to_path()
+#[macro_export]
+macro_rules! path {
+    ($($elem:expr),+) => {{
+        let mut vec = Vec::new();
+        $(vec.push($elem);)*
+        convert_to_path(&vec).unwrap()
+    }};
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
-
-    fn convert_to_path<T: AsRef<str>>(comps: &Vec<T>) -> Option<UsePath> {
-        let parts: Vec<Option<UsePathComponent>> = comps
-            .iter()
-            .map(|s| {
-                if s.as_ref() == "*" {
-                    Some(UsePathComponent::Glob)
-                } else if s.as_ref().contains(",") {
-                    let words: Vec<&str> = s.as_ref().split(",").map(|s| s.trim()).collect();
-                    if words.len() != 2 {
-                        None
-                    } else {
-                        Some(UsePathComponent::Alias(UsePathComponentAlias::from_pair(
-                            words[0].clone(),
-                            words[1].clone(),
-                        )))
-                    }
-                } else if !s.as_ref().contains(" ") {
-                    Some(UsePathComponent::Name(String::from(s.as_ref())))
-                } else {
-                    None
-                }
-            })
-            .collect();
-        if parts.iter().any(|item| item.is_none()) {
-            None
-        } else {
-            Some(UsePath::from(
-                &parts
-                    .into_iter()
-                    .map(|part| part.unwrap())
-                    .collect::<Vec<UsePathComponent>>(),
-            ))
-        }
-    }
 
     #[test]
     fn test_discrete_uses() {
@@ -293,18 +303,15 @@ use uucore::InvalidEncodingHandling;
 ";
         let file = syn::parse_file(&source).unwrap();
         let use_paths = extract_global_uses(&file);
-        let expected_use_paths: Vec<UsePath> = vec![
-            vec!["bstr", "io", "BufReadExt"],
-            vec!["std", "fs", "File"],
-            vec!["std", "path", "Path"],
-            vec!["self", "searcher", "Searcher"],
-            vec!["uucore", "fs", "is_stdout_interactive"],
-            vec!["uucore", "ranges", "Range"],
-            vec!["uucore", "InvalidEncodingHandling"],
-        ]
-        .iter()
-        .map(|x| convert_to_path(x).unwrap())
-        .collect();
+        let expected_use_paths = vec![
+            path!["bstr", "io", "BufReadExt"],
+            path!["std", "fs", "File"],
+            path!["std", "path", "Path"],
+            path!["self", "searcher", "Searcher"],
+            path!["uucore", "fs", "is_stdout_interactive"],
+            path!["uucore", "ranges", "Range"],
+            path!["uucore", "InvalidEncodingHandling"],
+        ];
         assert_eq!(use_paths, expected_use_paths);
     }
 
@@ -316,20 +323,17 @@ use std::fs::*;
 ";
         let file = syn::parse_file(&source).unwrap();
         let use_paths = extract_global_uses(&file);
-        let expected_use_paths: Vec<UsePath> = vec![
-            vec!["clap", "App"],
-            vec!["clap", "Arg"],
-            vec!["std", "io", "stdin"],
-            vec!["std", "io", "stdout"],
-            vec!["std", "io", "BufReader"],
-            vec!["std", "io", "BufWriter"],
-            vec!["std", "io", "Read"],
-            vec!["std", "io", "Write"],
-            vec!["std", "fs", "*"],
-        ]
-        .iter()
-        .map(|x| convert_to_path(x).unwrap())
-        .collect();
+        let expected_use_paths = vec![
+            path!["clap", "App"],
+            path!["clap", "Arg"],
+            path!["std", "io", "stdin"],
+            path!["std", "io", "stdout"],
+            path!["std", "io", "BufReader"],
+            path!["std", "io", "BufWriter"],
+            path!["std", "io", "Read"],
+            path!["std", "io", "Write"],
+            path!["std", "fs", "*"],
+        ];
         assert_eq!(use_paths, expected_use_paths);
     }
 
@@ -348,11 +352,7 @@ fn foo<U: AsRef<Path>>(p: U) {
         let file = syn::parse_file(&source).unwrap();
         if let Item::Fn(fn_item) = &file.items[2] {
             let use_paths = extract_block_uses(fn_item.block.as_ref());
-            let expected_use_paths: Vec<UsePath> =
-                vec![vec!["fs", "*"], vec!["std", "path", "PathBuf"]]
-                    .iter()
-                    .map(|x| convert_to_path(x).unwrap())
-                    .collect();
+            let expected_use_paths = vec![path!["fs", "*"], path!["std", "path", "PathBuf"]];
             assert_eq!(use_paths, expected_use_paths);
         } else {
             panic!("Code parsed incorrectly");
@@ -361,45 +361,27 @@ fn foo<U: AsRef<Path>>(p: U) {
 
     #[test]
     fn test_extend_paths_unambiguous() {
-        let parents: Vec<UsePath> = vec![vec!["std", "fs", "*"], vec!["std", "path", "Component"]]
-            .iter()
-            .map(|x| convert_to_path(x).unwrap())
-            .collect();
-        let children: Vec<UsePath> = vec![vec!["File,Dumb"], vec!["Component", "*"]]
-            .iter()
-            .map(|x| convert_to_path(x).unwrap())
-            .collect();
+        let parents = vec![path!["std", "fs", "*"], path!["std", "path", "Component"]];
+        let children = vec![path!["File,Dumb"], path!["Component", "*"]];
         let extended = extend_path_once(&parents, &children).unwrap();
-        let extended_expected: Vec<UsePath> = vec![
-            vec!["std", "fs", "File,Dumb"],
-            vec!["std", "path", "Component", "*"],
-        ]
-        .iter()
-        .map(|x| convert_to_path(x).unwrap())
-        .collect();
+        let extended_expected = vec![
+            path!["std", "fs", "File,Dumb"],
+            path!["std", "path", "Component", "*"],
+        ];
         assert_eq!(extended, extended_expected);
     }
 
     #[test]
     fn test_extend_paths_ambiguous() {
-        let parents: Vec<UsePath> = vec![vec!["std", "fs", "*"], vec!["std", "path", "*"]]
-            .iter()
-            .map(|x| convert_to_path(x).unwrap())
-            .collect();
-        let children: Vec<UsePath> = vec![vec!["File,Dumb"], vec!["Component", "*"]]
-            .iter()
-            .map(|x| convert_to_path(x).unwrap())
-            .collect();
+        let parents = vec![path!["std", "fs", "*"], path!["std", "path", "*"]];
+        let children = vec![path!["File,Dumb"], path!["Component", "*"]];
         let extended = extend_path_once(&parents, &children).unwrap();
-        let extended_expected: Vec<UsePath> = vec![
-            vec!["std", "fs", "File,Dumb"],
-            vec!["std", "path", "File,Dumb"],
-            vec!["std", "fs", "Component", "*"],
-            vec!["std", "path", "Component", "*"],
-        ]
-        .iter()
-        .map(|x| convert_to_path(x).unwrap())
-        .collect();
+        let extended_expected = vec![
+            path!["std", "fs", "File,Dumb"],
+            path!["std", "path", "File,Dumb"],
+            path!["std", "fs", "Component", "*"],
+            path!["std", "path", "Component", "*"],
+        ];
         assert_eq!(extended, extended_expected);
     }
 }
