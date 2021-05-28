@@ -28,12 +28,18 @@ impl Display for UsePath {
     }
 }
 
+impl UsePath {
+    pub fn components(&self) -> &Vec<UsePathComponent> {
+        &self.components
+    }
+}
+
 /// The parts of a use path.
 /// So, use std::fs::* will create 3 parts, Name("std"), Name("fs"), Glob.
 /// So, use std::fs::File as StdFile will create 3 parts, Name("std"), Name("fs"),
 /// Alias(UsePathComponentAlias {from: "File", to: "StdFile"}).
 #[derive(Clone, PartialEq, Eq, Debug)]
-enum UsePathComponent {
+pub enum UsePathComponent {
     Name(String),
     Alias(UsePathComponentAlias),
     Glob,
@@ -67,7 +73,7 @@ impl Display for UsePathComponent {
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
-struct UsePathComponentAlias {
+pub struct UsePathComponentAlias {
     from: String,
     to: String,
 }
@@ -78,6 +84,10 @@ impl UsePathComponentAlias {
             from: String::from(from.as_ref()),
             to: String::from(to.as_ref()),
         }
+    }
+
+    pub fn to_pair(&self) -> (&str, &str) {
+        (self.from.as_str(), self.to.as_str())
     }
 }
 
@@ -241,7 +251,7 @@ fn join_paths(parent: &UsePath, child: &UsePath) -> UsePath {
     )
 }
 
-fn convert_to_path<T: AsRef<str>>(comps: &Vec<T>) -> Option<UsePath> {
+pub fn convert_to_path<T: AsRef<str>>(comps: &Vec<T>) -> Option<UsePath> {
     let parts: Vec<Option<UsePathComponent>> = comps
         .iter()
         .map(|s| {
@@ -282,7 +292,7 @@ macro_rules! path {
     ($($elem:expr),+) => {{
         let mut vec = Vec::new();
         $(vec.push($elem);)*
-        convert_to_path(&vec).unwrap()
+        crate::uses::convert_to_path(&vec).unwrap()
     }};
 }
 

@@ -14,6 +14,58 @@ pub struct SingleResource {
     creators: Vec<Creator>,
 }
 
+// impl SingleResource {
+//     fn trim_by_use_paths(&self, paths: &Vec<UsePath>) -> Result<Self, PathTrimError> {
+//         let mut new_id = None;
+//         for path in paths {
+//             if let Some(id) = trim_common(self.id, path) {
+//                 new_id = Some(id);
+//                 break;
+//             }
+//         }
+//     }
+// }
+
+#[derive(Debug)]
+pub struct PathTrimError(String);
+
+/// Attempts to remove `path` from `id` if `path` is an acceptable prefix of `id`.
+///
+/// Criterion for acceptability: Assume that path is used as a use path in a Rust module.
+/// If a function is directly a member of *that* module, and we attempt to use id, then
+/// path is acceptable if it **shortens** the length of id that is required to be used.
+///
+/// *Example*: If we want to invoke `tokio::sync::oneshot::channel` (this is `id`), then
+/// all the acceptable paths are: `tokio`, `tokio::*`, `tokio::sync`, `tokio::sync::*`,
+/// `tokio::sync::oneshot`, `tokio::sync::oneshot::*`, `tokio::sync::oneshot::channel`.
+fn trim_common(id: &ResourceID, path: &UsePath) -> Option<ResourceID> {
+    let path_comps = path.components();
+    let id_comps = id.components();
+    if let Some(new_comps) = id_comps.strip_prefix(&path_comps[0..path_comps.len() - 1]) {
+        let path_comps_last = path_comps.last().unwrap();
+        match path_comps_last {
+            &UsePathComponent::Glob => return Some(UsePath::from(&new_comps.to_vec())),
+            &UsePathComponent::Name(_) => {
+                if id_comps.starts_with(&path_comps) {
+                    return Some(UsePath::from(&new_comps.to_vec()));
+                }
+            }
+            UsePathComponent::Alias(alias) => {
+                let (from, to) = alias.to_pair();
+                let new_first = new_comps.first().unwrap();
+                if let UsePathComponent::Name(name) = new_first {
+                    if name == from {
+                        let mut new_comps = new_comps.to_vec().clone();
+                        new_comps[0] = UsePathComponent::Name(to.to_string());
+                        return Some(UsePath::from(&new_comps));
+                    }
+                }
+            }
+        };
+    }
+    None
+}
+
 /// Creator refers to functions which create a resource.
 ///
 /// A `Direct` creator is one like `Arc::new()` or `Notify::new()`.
@@ -35,4 +87,40 @@ pub enum Creator {
 pub struct NestedResource {
     res: SingleResource,
     rest: Option<Box<NestedResource>>,
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::path;
+
+    #[test]
+    fn test_trim_path() {
+        let id = path!["tokio", "sync", "oneshot", "channel"];
+        let paths = vec![
+            path!["tokio"],
+            path!["tokio", "*"],
+            path!["tokio", "sync"],
+            path!["tokio", "sync", "*"],
+            path!["tokio", "sync", "oneshot"],
+            path!["tokio", "sync", "oneshot,onesie"],
+            path!["tokio", "sync", "oneshot", "*"],
+            path!["tokio", "sync", "oneshot", "channel"],
+        ];
+        let trimmed_id = vec![
+            path!["tokio", "sync", "oneshot", "channel"],
+            path!["sync", "oneshot", "channel"],
+            path!["sync", "oneshot", "channel"],
+            path!["oneshot", "channel"],
+            path!["oneshot", "channel"],
+            path!["onesie", "channel"],
+            path!["channel"],
+            path!["channel"],
+        ];
+        assert!(paths
+            .iter()
+            .zip(trimmed_id.iter())
+            .map(|(path, trimmed)| trim_common(&id, path).unwrap() == *trimmed)
+            .all(|x| x));
+    }
 }
