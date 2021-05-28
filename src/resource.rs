@@ -14,17 +14,42 @@ pub struct SingleResource {
     creators: Vec<Creator>,
 }
 
-// impl SingleResource {
-//     fn trim_by_use_paths(&self, paths: &Vec<UsePath>) -> Result<Self, PathTrimError> {
-//         let mut new_id = None;
-//         for path in paths {
-//             if let Some(id) = trim_common(self.id, path) {
-//                 new_id = Some(id);
-//                 break;
-//             }
-//         }
-//     }
-// }
+impl SingleResource {
+    fn trim_by_use_paths(&self, paths: &Vec<UsePath>) -> Result<Self, PathTrimError> {
+        let mut new_id = self.id.clone();
+        for path in paths {
+            if let Some(id) = trim_common(&self.id, path) {
+                new_id = id;
+                break;
+            }
+        }
+        let mut new_creators = Vec::new();
+        for creator in &self.creators {
+            let mut new_creator = creator.clone();
+            for path in paths {
+                match creator {
+                    Creator::Tuple(id, idx) => {
+                        if let Some(new_id) = trim_common(id, path) {
+                            new_creator = Creator::Tuple(new_id, *idx);
+                            break;
+                        }
+                    }
+                    Creator::Direct(id) => {
+                        if let Some(new_id) = trim_common(id, path) {
+                            new_creator = Creator::Direct(new_id);
+                            break;
+                        }
+                    }
+                }
+            }
+            new_creators.push(new_creator);
+        }
+        Ok(Self {
+            id: new_id,
+            creators: new_creators,
+        })
+    }
+}
 
 #[derive(Debug)]
 pub struct PathTrimError(String);
@@ -74,6 +99,7 @@ fn trim_common(id: &ResourceID, path: &UsePath) -> Option<ResourceID> {
 /// A `Tuple` creator is one like `oneshot::channel()`. This returns
 /// both the sender and the reciever as a tuple. Hence, the second arg
 /// is the index of the tuple we are interested in.
+#[derive(Debug, Clone)]
 pub enum Creator {
     Direct(ResourceID),
     Tuple(ResourceID, usize),

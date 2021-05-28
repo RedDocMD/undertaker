@@ -6,7 +6,7 @@ use syn::{Block, File, Item, Stmt, UseTree};
 /// Since, sometimes use statements are written in a way that require use to know
 /// the contents of a crate, those paths are left partly defined.
 /// Eg: `use std::fs::*;`.
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub struct UsePath {
     components: Vec<UsePathComponent>,
 }
