@@ -174,7 +174,7 @@ pub fn resource_creation_from_block(
                             }
                             Tuple(pat) => {
                                 if let Creator::Tuple(_, idx) = creator {
-                                    let pat = pat.elems.iter().skip(idx).next().unwrap();
+                                    let pat = pat.elems.iter().skip(*idx).next().unwrap();
                                     if let Ident(lit) = pat {
                                         return Some(Object {
                                             ident: lit.ident.to_string(),
@@ -198,26 +198,26 @@ pub fn resource_creation_from_block(
     None
 }
 
-pub fn resource_creation_from_expr(
+pub fn resource_creation_from_expr<'res>(
     expr: &Expr,
-    resource: &SingleResource,
+    resource: &'res SingleResource,
     uses: &Vec<UsePath>,
-) -> Option<Creator> {
+) -> Option<&'res Creator> {
     use Expr::*;
     match expr {
         Call(expr) => {
-            let resource = resource.trim_by_use_paths(uses);
+            let trimmed_res = resource.trim_by_use_paths(uses);
             // Check if the function call is appropriate.
             match expr.func.as_ref() {
                 Path(expr) => {
-                    for creator in &resource.creators {
+                    for (idx, creator) in trimmed_res.creators.iter().enumerate() {
                         let id = match creator {
                             Creator::Direct(id) => id,
                             Creator::Tuple(id, _) => id,
                         };
                         if match_expr_path(id, &expr.path) {
                             println!("Found {}", id);
-                            return Some(creator.clone());
+                            return Some(&resource.creators[idx]);
                         }
                     }
                 }
