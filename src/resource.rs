@@ -9,13 +9,14 @@ pub type ResourceID = UsePath;
 ///
 /// The `creators` field contains identifiers of functions
 /// (aka methods) which create (or construct) such a resource.
+#[derive(Debug, PartialEq, Eq)]
 pub struct SingleResource {
     id: ResourceID,
     creators: Vec<Creator>,
 }
 
 impl SingleResource {
-    fn trim_by_use_paths(&self, paths: &Vec<UsePath>) -> Result<Self, PathTrimError> {
+    fn trim_by_use_paths(&self, paths: &Vec<UsePath>) -> SingleResource {
         let mut new_id = self.id.clone();
         for path in paths {
             if let Some(id) = trim_common(&self.id, path) {
@@ -44,15 +45,12 @@ impl SingleResource {
             }
             new_creators.push(new_creator);
         }
-        Ok(Self {
+        Self {
             id: new_id,
             creators: new_creators,
-        })
+        }
     }
 }
-
-#[derive(Debug)]
-pub struct PathTrimError(String);
 
 /// Attempts to remove `path` from `id` if `path` is an acceptable prefix of `id`.
 ///
@@ -99,7 +97,7 @@ fn trim_common(id: &ResourceID, path: &UsePath) -> Option<ResourceID> {
 /// A `Tuple` creator is one like `oneshot::channel()`. This returns
 /// both the sender and the reciever as a tuple. Hence, the second arg
 /// is the index of the tuple we are interested in.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Creator {
     Direct(ResourceID),
     Tuple(ResourceID, usize),
@@ -148,5 +146,30 @@ mod test {
             .zip(trimmed_id.iter())
             .map(|(path, trimmed)| trim_common(&id, path).unwrap() == *trimmed)
             .all(|x| x));
+    }
+
+    #[test]
+    fn test_trim_by_use_path() {
+        let reciever_res = SingleResource {
+            id: path!["tokio", "sync", "oneshot", "Reciever"],
+            creators: vec![Creator::Tuple(
+                path!["tokio", "sync", "oneshot", "channel"],
+                1,
+            )],
+        };
+        let use_paths = vec![
+            path!["std", "fs", "File"],
+            path!["std", "io", "prelude", "*"],
+            path!["tokio", "sync", "Notify"],
+            path!["tokio", "sync", "oneshot,one"],
+        ];
+        let trimed_reciever_res = SingleResource {
+            id: path!["one", "Reciever"],
+            creators: vec![Creator::Tuple(path!["one", "channel"], 1)],
+        };
+        assert_eq!(
+            reciever_res.trim_by_use_paths(&&use_paths),
+            trimed_reciever_res
+        );
     }
 }
