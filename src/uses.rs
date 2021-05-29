@@ -204,6 +204,20 @@ pub fn extend_path_once(
     parents: &Vec<UsePath>,
     children: &Vec<UsePath>,
 ) -> Result<Vec<UsePath>, PathExtendFailed> {
+    fn is_exact_parent_of(parent: &UsePath, child: &UsePath) -> bool {
+        return parent.components.last() == child.components.first();
+    }
+
+    fn join_paths(parent: &UsePath, child: &UsePath) -> UsePath {
+        UsePath::from(
+            &parent.components[0..parent.components.len() - 1]
+                .iter()
+                .chain(child.components.iter())
+                .cloned()
+                .collect::<Vec<UsePathComponent>>(),
+        )
+    }
+
     let mut new_children = Vec::new();
     for child in children {
         // First, check for exact match.
@@ -236,20 +250,6 @@ pub fn extend_path_once(
 
 #[derive(Debug)]
 pub struct PathExtendFailed(String);
-
-fn is_exact_parent_of(parent: &UsePath, child: &UsePath) -> bool {
-    return parent.components.last() == child.components.first();
-}
-
-fn join_paths(parent: &UsePath, child: &UsePath) -> UsePath {
-    UsePath::from(
-        &parent.components[0..parent.components.len() - 1]
-            .iter()
-            .chain(child.components.iter())
-            .cloned()
-            .collect::<Vec<UsePathComponent>>(),
-    )
-}
 
 pub fn convert_to_path<T: AsRef<str>>(comps: &Vec<T>) -> Option<UsePath> {
     let parts: Vec<Option<UsePathComponent>> = comps
