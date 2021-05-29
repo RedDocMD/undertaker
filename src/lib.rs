@@ -1,2 +1,2 @@
-mod resource;
-mod uses;
+pub mod resource;
+pub mod uses;

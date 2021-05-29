@@ -1,3 +1,5 @@
+use syn::{Block, Expr, Path};
+
 use crate::uses::*;
 
 /// The fully-qualified path to a resource.
@@ -16,6 +18,10 @@ pub struct SingleResource {
 }
 
 impl SingleResource {
+    pub fn new(id: ResourceID, creators: Vec<Creator>) -> Self {
+        Self { id, creators }
+    }
+
     fn trim_by_use_paths(&self, paths: &Vec<UsePath>) -> SingleResource {
         let mut new_id = self.id.clone();
         for path in paths {
@@ -50,6 +56,19 @@ impl SingleResource {
             creators: new_creators,
         }
     }
+}
+
+fn match_expr_path(res: &ResourceID, expr_path: &Path) -> bool {
+    res.components()
+        .iter()
+        .zip(expr_path.segments.iter())
+        .all(|(res_seg, expr_seg)| {
+            if let UsePathComponent::Name(res_seg) = res_seg {
+                res_seg == &expr_seg.ident.to_string()
+            } else {
+                false
+            }
+        })
 }
 
 /// Attempts to remove `path` from `id` if `path` is an acceptable prefix of `id`.
@@ -111,6 +130,51 @@ pub enum Creator {
 pub struct NestedResource {
     res: SingleResource,
     rest: Option<Box<NestedResource>>,
+}
+
+pub fn resource_from_block(block: &Block, resource: &SingleResource, outer_uses: &Vec<UsePath>) {
+    // Adjust use paths to block
+    let mut block_uses = extract_block_uses(block);
+    block_uses = extend_path_once(outer_uses, &block_uses).unwrap();
+    block_uses.append(&mut outer_uses.clone());
+
+    for stmt in &block.stmts {
+        use syn::Stmt::*;
+        match stmt {
+            Local(local) => {
+                if let Some(init) = &local.init {
+                    resource_from_expr(init.1.as_ref(), &resource, &block_uses);
+                }
+            }
+            Expr(expr) => resource_from_expr(expr, &resource, &block_uses),
+            Semi(expr, _) => resource_from_expr(expr, &resource, &block_uses),
+            Item(_) => {}
+        }
+    }
+}
+
+pub fn resource_from_expr(expr: &Expr, resource: &SingleResource, uses: &Vec<UsePath>) {
+    use Expr::*;
+    match expr {
+        Call(expr) => {
+            let resource = resource.trim_by_use_paths(uses);
+            match expr.func.as_ref() {
+                Path(expr) => {
+                    for creator in &resource.creators {
+                        let id = match creator {
+                            Creator::Direct(id) => id,
+                            Creator::Tuple(id, _) => id,
+                        };
+                        if match_expr_path(id, &expr.path) {
+                            println!("Found {}", id);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        _ => {}
+    }
 }
 
 #[cfg(test)]
