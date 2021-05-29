@@ -1,4 +1,6 @@
-use syn::{Block, Expr, Path};
+use std::fmt::{self, Display, Formatter};
+
+use syn::{Block, Expr, Pat, Path};
 
 use crate::uses::*;
 
@@ -122,6 +124,17 @@ pub enum Creator {
     Tuple(ResourceID, usize),
 }
 
+pub struct Object {
+    ident: String,
+    id: ResourceID,
+}
+
+impl Display for Object {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}: {}", self.ident, self.id)
+    }
+}
+
 /// NestedResource refers to resources like Arc<Notify> or Mutex<Condvar>.
 ///
 /// Individually, Arc, Notify, Mutex, Condvar are SingleResources. But to
@@ -136,7 +149,7 @@ pub fn resource_creation_from_block(
     block: &Block,
     resource: &SingleResource,
     outer_uses: &Vec<UsePath>,
-) {
+) -> Option<Object> {
     // Adjust use paths to block
     let mut block_uses = extract_block_uses(block);
     block_uses = extend_path_once(outer_uses, &block_uses).unwrap();
@@ -147,19 +160,49 @@ pub fn resource_creation_from_block(
         match stmt {
             Local(local) => {
                 if let Some(init) = &local.init {
-                    resource_creation_from_expr(init.1.as_ref(), &resource, &block_uses);
+                    let creator =
+                        resource_creation_from_expr(init.1.as_ref(), &resource, &block_uses);
+                    if let Some(creator) = creator {
+                        let pat = &local.pat;
+                        use Pat::*;
+                        match pat {
+                            Ident(pat) => {
+                                return Some(Object {
+                                    ident: pat.ident.to_string(),
+                                    id: resource.id.clone(),
+                                });
+                            }
+                            Tuple(pat) => {
+                                if let Creator::Tuple(_, idx) = creator {
+                                    let pat = pat.elems.iter().skip(idx).next().unwrap();
+                                    if let Ident(lit) = pat {
+                                        return Some(Object {
+                                            ident: lit.ident.to_string(),
+                                            id: resource.id.clone(),
+                                        });
+                                    } else {
+                                        unreachable!("Did not expect anything other than a literal pattern here");
+                                    }
+                                } else {
+                                    unreachable!("Cannot be a tuple let and not a tuple creator");
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
                 }
             }
             _ => {}
         };
     }
+    None
 }
 
 pub fn resource_creation_from_expr(
     expr: &Expr,
     resource: &SingleResource,
     uses: &Vec<UsePath>,
-) -> bool {
+) -> Option<Creator> {
     use Expr::*;
     match expr {
         Call(expr) => {
@@ -174,7 +217,7 @@ pub fn resource_creation_from_expr(
                         };
                         if match_expr_path(id, &expr.path) {
                             println!("Found {}", id);
-                            return true;
+                            return Some(creator.clone());
                         }
                     }
                 }
@@ -182,14 +225,15 @@ pub fn resource_creation_from_expr(
             }
             // Otherwise check the args
             for arg in &expr.args {
-                if resource_creation_from_expr(arg, &resource, uses) {
-                    return true;
+                let creator = resource_creation_from_expr(arg, &resource, uses);
+                if creator.is_some() {
+                    return creator;
                 }
             }
         }
         _ => {}
     };
-    return false;
+    None
 }
 
 #[cfg(test)]

@@ -39,12 +39,20 @@ fn main() {
         if let Item::Fn(func) = item {
             let sig = &func.sig;
             if sig.ident.to_string() == String::from("main") {
-                resource::resource_creation_from_block(
+                let obj = resource::resource_creation_from_block(
                     func.block.as_ref(),
                     &reciever_res,
                     &top_uses,
-                );
-                resource::resource_creation_from_block(func.block.as_ref(), &notify_res, &top_uses);
+                )
+                .unwrap();
+                println!("{}", obj);
+                let obj = resource::resource_creation_from_block(
+                    func.block.as_ref(),
+                    &notify_res,
+                    &top_uses,
+                )
+                .unwrap();
+                println!("{}", obj);
                 break;
             }
         }
