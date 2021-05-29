@@ -132,7 +132,11 @@ pub struct NestedResource {
     rest: Option<Box<NestedResource>>,
 }
 
-pub fn resource_from_block(block: &Block, resource: &SingleResource, outer_uses: &Vec<UsePath>) {
+pub fn resource_creation_from_block(
+    block: &Block,
+    resource: &SingleResource,
+    outer_uses: &Vec<UsePath>,
+) {
     // Adjust use paths to block
     let mut block_uses = extract_block_uses(block);
     block_uses = extend_path_once(outer_uses, &block_uses).unwrap();
@@ -143,21 +147,24 @@ pub fn resource_from_block(block: &Block, resource: &SingleResource, outer_uses:
         match stmt {
             Local(local) => {
                 if let Some(init) = &local.init {
-                    resource_from_expr(init.1.as_ref(), &resource, &block_uses);
+                    resource_creation_from_expr(init.1.as_ref(), &resource, &block_uses);
                 }
             }
-            Expr(expr) => resource_from_expr(expr, &resource, &block_uses),
-            Semi(expr, _) => resource_from_expr(expr, &resource, &block_uses),
-            Item(_) => {}
-        }
+            _ => {}
+        };
     }
 }
 
-pub fn resource_from_expr(expr: &Expr, resource: &SingleResource, uses: &Vec<UsePath>) {
+pub fn resource_creation_from_expr(
+    expr: &Expr,
+    resource: &SingleResource,
+    uses: &Vec<UsePath>,
+) -> bool {
     use Expr::*;
     match expr {
         Call(expr) => {
             let resource = resource.trim_by_use_paths(uses);
+            // Check if the function call is appropriate.
             match expr.func.as_ref() {
                 Path(expr) => {
                     for creator in &resource.creators {
@@ -167,14 +174,22 @@ pub fn resource_from_expr(expr: &Expr, resource: &SingleResource, uses: &Vec<Use
                         };
                         if match_expr_path(id, &expr.path) {
                             println!("Found {}", id);
+                            return true;
                         }
                     }
                 }
                 _ => {}
             }
+            // Otherwise check the args
+            for arg in &expr.args {
+                if resource_creation_from_expr(arg, &resource, uses) {
+                    return true;
+                }
+            }
         }
         _ => {}
-    }
+    };
+    return false;
 }
 
 #[cfg(test)]

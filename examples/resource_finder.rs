@@ -29,13 +29,22 @@ fn main() {
             1,
         )],
     );
+    let notify_res = SingleResource::new(
+        path!["tokio", "sync", "Notify"],
+        vec![Creator::Tuple(path!["tokio", "sync", "Notify", "new"], 1)],
+    );
     let top_uses = uses::extract_global_uses(&ast);
 
     for item in ast.items {
         if let Item::Fn(func) = item {
             let sig = &func.sig;
             if sig.ident.to_string() == String::from("main") {
-                resource::resource_from_block(func.block.as_ref(), &reciever_res, &top_uses);
+                resource::resource_creation_from_block(
+                    func.block.as_ref(),
+                    &reciever_res,
+                    &top_uses,
+                );
+                resource::resource_creation_from_block(func.block.as_ref(), &notify_res, &top_uses);
                 break;
             }
         }
