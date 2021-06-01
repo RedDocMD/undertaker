@@ -3,7 +3,7 @@ use std::{env, fs::File, process};
 
 use syn::Item;
 use undertaker::resource;
-use undertaker::resource::{Creator, SingleResource};
+use undertaker::resource::{Creator, Resource};
 use undertaker::uses;
 
 #[macro_use]
@@ -22,14 +22,14 @@ fn main() {
         .expect(&format!("Failed to read {}", filename));
 
     let ast = syn::parse_file(&src).expect(&format!("Failed to parse {}", filename));
-    let reciever_res = SingleResource::new(
+    let reciever_res = Resource::single(
         path!["tokio", "sync", "oneshot", "Reciever"],
         vec![Creator::Tuple(
             path!["tokio", "sync", "oneshot", "channel"],
             1,
         )],
     );
-    let notify_res = SingleResource::new(
+    let notify_res = Resource::single(
         path!["tokio", "sync", "Notify"],
         vec![Creator::Tuple(path!["tokio", "sync", "Notify", "new"], 1)],
     );

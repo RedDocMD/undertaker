@@ -13,14 +13,14 @@ pub type ResourceID = UsePath;
 ///
 /// The `creators` field contains identifiers of functions
 /// (aka methods) which create (or construct) such a resource.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SingleResource {
     id: ResourceID,
     creators: Vec<Creator>,
 }
 
 impl SingleResource {
-    pub fn new(id: ResourceID, creators: Vec<Creator>) -> Self {
+    fn new(id: ResourceID, creators: Vec<Creator>) -> Self {
         Self { id, creators }
     }
 
@@ -126,12 +126,12 @@ pub enum Creator {
 
 pub struct Object {
     ident: String,
-    id: ResourceID,
+    resource: Resource,
 }
 
 impl Display for Object {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}: {}", self.ident, self.id)
+        write!(f, "{}: {}", self.ident, self.resource)
     }
 }
 
@@ -140,14 +140,34 @@ impl Display for Object {
 /// Individually, Arc, Notify, Mutex, Condvar are SingleResources. But to
 /// satisfy the Rust type-system and our own concurrency needs, we need to nest
 /// them.
-pub struct NestedResource {
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct Resource {
     res: SingleResource,
-    rest: Option<Box<NestedResource>>,
+    rest: Option<Box<Resource>>,
+}
+
+impl Resource {
+    pub fn single(id: ResourceID, creators: Vec<Creator>) -> Self {
+        Self {
+            res: SingleResource::new(id, creators),
+            rest: None,
+        }
+    }
+}
+
+impl Display for Resource {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.res.id)?;
+        if self.rest.is_some() {
+            write!(f, "<{}>", self.rest.as_ref().unwrap().as_ref())?;
+        }
+        Ok(())
+    }
 }
 
 pub fn resource_creation_from_block(
     block: &Block,
-    resource: &SingleResource,
+    resource: &Resource,
     outer_uses: &Vec<UsePath>,
 ) -> Option<Object> {
     // Adjust use paths to block
@@ -169,7 +189,7 @@ pub fn resource_creation_from_block(
                             Ident(pat) => {
                                 return Some(Object {
                                     ident: pat.ident.to_string(),
-                                    id: resource.id.clone(),
+                                    resource: resource.clone(),
                                 });
                             }
                             Tuple(pat) => {
@@ -178,7 +198,7 @@ pub fn resource_creation_from_block(
                                     if let Ident(lit) = pat {
                                         return Some(Object {
                                             ident: lit.ident.to_string(),
-                                            id: resource.id.clone(),
+                                            resource: resource.clone(),
                                         });
                                     } else {
                                         unreachable!("Did not expect anything other than a literal pattern here");
@@ -200,13 +220,14 @@ pub fn resource_creation_from_block(
 
 pub fn resource_creation_from_expr<'res>(
     expr: &Expr,
-    resource: &'res SingleResource,
+    resource: &'res Resource,
     uses: &Vec<UsePath>,
 ) -> Option<&'res Creator> {
     use Expr::*;
     match expr {
         Call(expr) => {
-            let trimmed_res = resource.trim_by_use_paths(uses);
+            // FIXME: Check for the nested inner resource
+            let trimmed_res = resource.res.trim_by_use_paths(uses);
             // Check if the function call is appropriate.
             match expr.func.as_ref() {
                 Path(expr) => {
@@ -217,7 +238,7 @@ pub fn resource_creation_from_expr<'res>(
                         };
                         if match_expr_path(id, &expr.path) {
                             println!("Found {}", id);
-                            return Some(&resource.creators[idx]);
+                            return Some(&resource.res.creators[idx]);
                         }
                     }
                 }
