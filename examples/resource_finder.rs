@@ -37,6 +37,23 @@ fn main() {
             vec![],
         ))],
     );
+    let notify = notify_res.as_single().unwrap().clone();
+    let arc_notify = Resource::single(
+        path!["std", "sync", "Arc"],
+        vec![
+            Creator::Direct(DirectCreator::new(
+                path!["std", "sync", "Arc", "new"],
+                vec![],
+            )),
+            Creator::Direct(DirectCreator::new(
+                path!["std", "sync", "Arc", "clone"],
+                vec![],
+            )),
+        ],
+    )
+    .nest(notify)
+    .to_owned();
+
     let top_uses = uses::extract_global_uses(&ast);
 
     for item in ast.items {
@@ -53,6 +70,13 @@ fn main() {
                 let obj = resource::resource_creation_from_block(
                     func.block.as_ref(),
                     &notify_res,
+                    &top_uses,
+                )
+                .unwrap();
+                println!("{}", obj);
+                let obj = resource::resource_creation_from_block(
+                    func.block.as_ref(),
+                    &arc_notify,
                     &top_uses,
                 )
                 .unwrap();

@@ -172,26 +172,76 @@ impl Display for Object {
 /// them.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Resource {
-    res: SingleResource,
+    resource: SingleResource,
     rest: Option<Box<Resource>>,
 }
 
 impl Resource {
     pub fn single(id: ResourceID, creators: Vec<Creator>) -> Self {
         Self {
-            res: SingleResource::new(id, creators),
+            resource: SingleResource::new(id, creators),
             rest: None,
         }
+    }
+
+    pub fn as_single(&self) -> Option<&SingleResource> {
+        if self.rest.is_none() {
+            Some(&self.resource)
+        } else {
+            None
+        }
+    }
+
+    pub fn nest(&mut self, single: SingleResource) -> &mut Self {
+        if self.rest.is_none() {
+            self.rest = Some(Box::new(Resource::from(single)));
+        } else {
+            let mut ptr = self.rest.as_mut().unwrap().as_mut();
+            while ptr.rest.is_some() {
+                ptr = ptr.rest.as_mut().unwrap().as_mut();
+            }
+            ptr.rest = Some(Box::new(Resource::from(single)));
+        }
+        self
     }
 }
 
 impl Display for Resource {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.res.id)?;
+        write!(f, "{}", self.resource.id)?;
         if self.rest.is_some() {
             write!(f, "<{}>", self.rest.as_ref().unwrap().as_ref())?;
         }
         Ok(())
+    }
+}
+
+impl From<SingleResource> for Resource {
+    fn from(item: SingleResource) -> Self {
+        Self {
+            resource: item,
+            rest: None,
+        }
+    }
+}
+
+impl From<Vec<SingleResource>> for Resource {
+    fn from(items: Vec<SingleResource>) -> Self {
+        if items.len() == 1 {
+            let mut items = items;
+            Self {
+                resource: items.pop().unwrap(),
+                rest: None,
+            }
+        } else {
+            let mut items = items.into_iter();
+            Self {
+                resource: items.next().unwrap(),
+                rest: Some(Box::new(Resource::from(
+                    items.collect::<Vec<SingleResource>>(),
+                ))),
+            }
+        }
     }
 }
 
@@ -257,19 +307,28 @@ pub fn resource_creation_from_expr<'res>(
     match expr {
         Call(expr) => {
             // FIXME: Check for the nested inner resource
-            let trimmed_res = resource.res.trim_by_use_paths(uses);
+            let trimmed_res = resource.resource.trim_by_use_paths(uses);
             // Check if the function call is appropriate.
             match expr.func.as_ref() {
-                Path(expr) => {
+                Path(path_expr) => {
                     for (idx, creator) in trimmed_res.creators.iter().enumerate() {
-                        let id = match creator {
-                            Creator::Direct(DirectCreator { id, .. }) => id,
-                            Creator::Tuple(TupleCreator { id, .. }) => id,
+                        let (id, args) = match creator {
+                            Creator::Direct(DirectCreator { id, args, .. }) => (id, args),
+                            Creator::Tuple(TupleCreator { id, args, .. }) => (id, args),
                         };
-                        if match_expr_path(id, &expr.path) {
+                        if match_expr_path(id, &path_expr.path) {
                             println!("Found {}", id);
-                            if let Some(rest) = &resource.rest {}
-                            return Some(&resource.res.creators[idx]);
+                            if let Some(rest) = &resource.rest {
+                                for arg in &expr.args {
+                                    if resource_creation_from_expr(arg, rest.as_ref(), uses)
+                                        .is_some()
+                                    {
+                                        return Some(&resource.resource.creators[idx]);
+                                    }
+                                }
+                            } else {
+                                return Some(&resource.resource.creators[idx]);
+                            }
                         }
                     }
                 }
