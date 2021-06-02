@@ -37,15 +37,20 @@ impl SingleResource {
             let mut new_creator = creator.clone();
             for path in paths {
                 match creator {
-                    Creator::Tuple(id, idx) => {
-                        if let Some(new_id) = trim_common(id, path) {
-                            new_creator = Creator::Tuple(new_id, *idx);
+                    Creator::Tuple(creator) => {
+                        if let Some(new_id) = trim_common(&creator.id, path) {
+                            new_creator = Creator::Tuple(TupleCreator::new(
+                                new_id,
+                                creator.args.clone(),
+                                creator.ret_idx,
+                            ));
                             break;
                         }
                     }
-                    Creator::Direct(id) => {
-                        if let Some(new_id) = trim_common(id, path) {
-                            new_creator = Creator::Direct(new_id);
+                    Creator::Direct(creator) => {
+                        if let Some(new_id) = trim_common(&creator.id, path) {
+                            new_creator =
+                                Creator::Direct(DirectCreator::new(new_id, creator.args.clone()));
                             break;
                         }
                     }
@@ -120,8 +125,33 @@ fn trim_common(id: &ResourceID, path: &UsePath) -> Option<ResourceID> {
 /// is the index of the tuple we are interested in.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Creator {
-    Direct(ResourceID),
-    Tuple(ResourceID, usize),
+    Direct(DirectCreator),
+    Tuple(TupleCreator),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DirectCreator {
+    id: ResourceID,
+    args: Vec<ResourceID>,
+}
+
+impl DirectCreator {
+    pub fn new(id: ResourceID, args: Vec<ResourceID>) -> Self {
+        Self { id, args }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TupleCreator {
+    id: ResourceID,
+    args: Vec<ResourceID>,
+    ret_idx: usize,
+}
+
+impl TupleCreator {
+    pub fn new(id: ResourceID, args: Vec<ResourceID>, ret_idx: usize) -> Self {
+        Self { id, args, ret_idx }
+    }
 }
 
 pub struct Object {
@@ -193,8 +223,8 @@ pub fn resource_creation_from_block(
                                 });
                             }
                             Tuple(pat) => {
-                                if let Creator::Tuple(_, idx) = creator {
-                                    let pat = pat.elems.iter().skip(*idx).next().unwrap();
+                                if let Creator::Tuple(TupleCreator { ret_idx, .. }) = creator {
+                                    let pat = pat.elems.iter().skip(*ret_idx).next().unwrap();
                                     if let Ident(lit) = pat {
                                         return Some(Object {
                                             ident: lit.ident.to_string(),
@@ -233,11 +263,12 @@ pub fn resource_creation_from_expr<'res>(
                 Path(expr) => {
                     for (idx, creator) in trimmed_res.creators.iter().enumerate() {
                         let id = match creator {
-                            Creator::Direct(id) => id,
-                            Creator::Tuple(id, _) => id,
+                            Creator::Direct(DirectCreator { id, .. }) => id,
+                            Creator::Tuple(TupleCreator { id, .. }) => id,
                         };
                         if match_expr_path(id, &expr.path) {
                             println!("Found {}", id);
+                            if let Some(rest) = &resource.rest {}
                             return Some(&resource.res.creators[idx]);
                         }
                     }
@@ -296,10 +327,11 @@ mod test {
     fn test_trim_by_use_path() {
         let reciever_res = SingleResource {
             id: path!["tokio", "sync", "oneshot", "Reciever"],
-            creators: vec![Creator::Tuple(
+            creators: vec![Creator::Tuple(TupleCreator::new(
                 path!["tokio", "sync", "oneshot", "channel"],
+                vec![],
                 1,
-            )],
+            ))],
         };
         let use_paths = vec![
             path!["std", "fs", "File"],
@@ -309,7 +341,11 @@ mod test {
         ];
         let trimed_reciever_res = SingleResource {
             id: path!["one", "Reciever"],
-            creators: vec![Creator::Tuple(path!["one", "channel"], 1)],
+            creators: vec![Creator::Tuple(TupleCreator::new(
+                path!["one", "channel"],
+                vec![],
+                1,
+            ))],
         };
         assert_eq!(
             reciever_res.trim_by_use_paths(&&use_paths),
