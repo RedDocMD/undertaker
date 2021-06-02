@@ -37,7 +37,6 @@ fn main() {
             vec![],
         ))],
     );
-    let notify = notify_res.as_single().unwrap().clone();
     let arc_notify = Resource::single(
         path!["std", "sync", "Arc"],
         vec![
@@ -51,7 +50,7 @@ fn main() {
             )),
         ],
     )
-    .nest(notify)
+    .nest(notify_res.as_single().unwrap().clone())
     .to_owned();
 
     let top_uses = uses::extract_global_uses(&ast);

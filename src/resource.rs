@@ -172,26 +172,33 @@ impl Display for Object {
 /// them.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Resource {
-    resource: SingleResource,
+    single: SingleResource,
     rest: Option<Box<Resource>>,
 }
 
 impl Resource {
+    /// Creates a non-nested resource.
     pub fn single(id: ResourceID, creators: Vec<Creator>) -> Self {
         Self {
-            resource: SingleResource::new(id, creators),
+            single: SingleResource::new(id, creators),
             rest: None,
         }
     }
 
+    /// If the resource has no nesting, it returns the SingleResource
+    /// it corresponds to. Otherwise returns None.
     pub fn as_single(&self) -> Option<&SingleResource> {
         if self.rest.is_none() {
-            Some(&self.resource)
+            Some(&self.single)
         } else {
             None
         }
     }
 
+    /// Nests a SingleResource inside of an existing resource.
+    /// Meant to be used as a builder pattern.
+    ///
+    /// Thus D nested inside A<B<C>> becomes A<B<C<D>>>.
     pub fn nest(&mut self, single: SingleResource) -> &mut Self {
         if self.rest.is_none() {
             self.rest = Some(Box::new(Resource::from(single)));
@@ -208,7 +215,7 @@ impl Resource {
 
 impl Display for Resource {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.resource.id)?;
+        write!(f, "{}", self.single.id)?;
         if self.rest.is_some() {
             write!(f, "<{}>", self.rest.as_ref().unwrap().as_ref())?;
         }
@@ -219,7 +226,7 @@ impl Display for Resource {
 impl From<SingleResource> for Resource {
     fn from(item: SingleResource) -> Self {
         Self {
-            resource: item,
+            single: item,
             rest: None,
         }
     }
@@ -230,13 +237,13 @@ impl From<Vec<SingleResource>> for Resource {
         if items.len() == 1 {
             let mut items = items;
             Self {
-                resource: items.pop().unwrap(),
+                single: items.pop().unwrap(),
                 rest: None,
             }
         } else {
             let mut items = items.into_iter();
             Self {
-                resource: items.next().unwrap(),
+                single: items.next().unwrap(),
                 rest: Some(Box::new(Resource::from(
                     items.collect::<Vec<SingleResource>>(),
                 ))),
@@ -306,13 +313,12 @@ pub fn resource_creation_from_expr<'res>(
     use Expr::*;
     match expr {
         Call(expr) => {
-            // FIXME: Check for the nested inner resource
-            let trimmed_res = resource.resource.trim_by_use_paths(uses);
+            let trimmed_res = resource.single.trim_by_use_paths(uses);
             // Check if the function call is appropriate.
             match expr.func.as_ref() {
                 Path(path_expr) => {
                     for (idx, creator) in trimmed_res.creators.iter().enumerate() {
-                        let (id, args) = match creator {
+                        let (id, _) = match creator {
                             Creator::Direct(DirectCreator { id, args, .. }) => (id, args),
                             Creator::Tuple(TupleCreator { id, args, .. }) => (id, args),
                         };
@@ -323,11 +329,11 @@ pub fn resource_creation_from_expr<'res>(
                                     if resource_creation_from_expr(arg, rest.as_ref(), uses)
                                         .is_some()
                                     {
-                                        return Some(&resource.resource.creators[idx]);
+                                        return Some(&resource.single.creators[idx]);
                                     }
                                 }
                             } else {
-                                return Some(&resource.resource.creators[idx]);
+                                return Some(&resource.single.creators[idx]);
                             }
                         }
                     }
