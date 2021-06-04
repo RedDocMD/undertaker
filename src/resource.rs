@@ -259,7 +259,7 @@ pub fn resource_creation_from_block(
 ) -> Option<Object> {
     // Adjust use paths to block
     let mut block_uses = extract_block_uses(block);
-    block_uses = extend_path_once(outer_uses, &block_uses).unwrap();
+    block_uses = extend_path_once(outer_uses.iter(), &block_uses).unwrap();
     block_uses.append(&mut outer_uses.clone());
 
     for stmt in &block.stmts {

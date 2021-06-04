@@ -200,10 +200,13 @@ fn paths_from_use_tree(tree: &UseTree) -> Vec<UsePath> {
 /// `std::fs::Component::*` or `std::path::Component::*`. This is *not* a problem
 /// since we are guaranteed that there are no actual amiguities, and so while using the `UsePath`,
 /// we will have no problem.
-pub fn extend_path_once(
-    parents: &Vec<UsePath>,
+pub fn extend_path_once<'par, I>(
+    parents: I,
     children: &Vec<UsePath>,
-) -> Result<Vec<UsePath>, PathExtendFailed> {
+) -> Result<Vec<UsePath>, PathExtendFailed>
+where
+    I: Iterator<Item = &'par UsePath> + Clone,
+{
     fn is_exact_parent_of(parent: &UsePath, child: &UsePath) -> bool {
         return parent.components.last() == child.components.first();
     }
@@ -222,7 +225,7 @@ pub fn extend_path_once(
     for child in children {
         // First, check for exact match.
         let mut found_match = false;
-        for parent in parents {
+        for parent in parents.clone() {
             if is_exact_parent_of(parent, child) {
                 if !found_match {
                     found_match = true;
@@ -250,7 +253,7 @@ pub fn extend_path_once(
             // The following code will try try to construct the following:
             // use std::path::std::fs::File, which is garbage.
             parents
-                .iter()
+                .clone()
                 .filter(|x| *x.components.last().unwrap() == UsePathComponent::Glob)
                 .for_each(|x| {
                     new_children.push(join_paths(x, child));
@@ -387,7 +390,7 @@ fn foo<U: AsRef<Path>>(p: U) {
     fn test_extend_paths_unambiguous() {
         let parents = vec![path!["std", "fs", "*"], path!["std", "path", "Component"]];
         let children = vec![path!["File,Dumb"], path!["Component", "*"]];
-        let extended = extend_path_once(&parents, &children).unwrap();
+        let extended = extend_path_once(parents.iter(), &children).unwrap();
         let extended_expected = vec![
             path!["std", "fs", "File,Dumb"],
             path!["File,Dumb"],
@@ -400,14 +403,14 @@ fn foo<U: AsRef<Path>>(p: U) {
     fn test_extend_paths_ambiguous() {
         let parents = vec![path!["std", "fs", "*"], path!["std", "path", "*"]];
         let children = vec![path!["File,Dumb"], path!["Component", "*"]];
-        let extended = extend_path_once(&parents, &children).unwrap();
+        let extended = extend_path_once(parents.iter(), &children).unwrap();
         let extended_expected = vec![
             path!["std", "fs", "File,Dumb"],
             path!["std", "path", "File,Dumb"],
             path!["File,Dumb"],
             path!["std", "fs", "Component", "*"],
             path!["std", "path", "Component", "*"],
-            path!["Component", "*"]
+            path!["Component", "*"],
         ];
         assert_eq!(extended, extended_expected);
     }

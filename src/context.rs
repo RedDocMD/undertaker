@@ -33,9 +33,8 @@ impl Context {
     /// Adds paths to the current block.
     pub fn add_use_paths(&mut self, paths: Vec<UsePath>) {
         // Safe since there is atleast the global scope.
-        let parents: Vec<UsePath> = self.iter().cloned().collect();
         let mut paths = paths;
-        paths = extend_path_once(&parents, &paths).unwrap();
+        paths = extend_path_once(self.iter(), &paths).unwrap();
         let last = self.use_paths.last_mut().unwrap();
         last.append(&mut paths);
     }
@@ -45,6 +44,7 @@ impl Context {
     }
 }
 
+#[derive(Clone)]
 pub struct PathIter<'ctx> {
     block_idx: usize,
     path_idx: usize,
