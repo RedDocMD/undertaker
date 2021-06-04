@@ -2,6 +2,7 @@ use std::fmt::{self, Display, Formatter};
 
 use syn::{Block, Expr, Pat, Path};
 
+use crate::context::Context;
 use crate::uses::*;
 
 /// The fully-qualified path to a resource.
@@ -24,9 +25,12 @@ impl SingleResource {
         Self { id, creators }
     }
 
-    fn trim_by_use_paths(&self, paths: &Vec<UsePath>) -> SingleResource {
+    fn trim_by_use_paths<'path, I>(&self, paths: I) -> SingleResource
+    where
+        I: Iterator<Item = &'path UsePath> + Clone,
+    {
         let mut new_id = self.id.clone();
-        for path in paths {
+        for path in paths.clone() {
             if let Some(id) = trim_common(&self.id, path) {
                 new_id = id;
                 break;
@@ -35,7 +39,7 @@ impl SingleResource {
         let mut new_creators = Vec::new();
         for creator in &self.creators {
             let mut new_creator = creator.clone();
-            for path in paths {
+            for path in paths.clone() {
                 match creator {
                     Creator::Tuple(creator) => {
                         if let Some(new_id) = trim_common(&creator.id, path) {
@@ -255,20 +259,19 @@ impl From<Vec<SingleResource>> for Resource {
 pub fn resource_creation_from_block(
     block: &Block,
     resource: &Resource,
-    outer_uses: &Vec<UsePath>,
+    ctxt: &mut Context,
 ) -> Option<Object> {
     // Adjust use paths to block
-    let mut block_uses = extract_block_uses(block);
-    block_uses = extend_path_once(outer_uses.iter(), &block_uses).unwrap();
-    block_uses.append(&mut outer_uses.clone());
+    let block_uses = extract_block_uses(block);
+    ctxt.enter_block();
+    ctxt.add_use_paths(block_uses);
 
     for stmt in &block.stmts {
         use syn::Stmt::*;
         match stmt {
             Local(local) => {
                 if let Some(init) = &local.init {
-                    let creator =
-                        resource_creation_from_expr(init.1.as_ref(), &resource, &block_uses);
+                    let creator = resource_creation_from_expr(init.1.as_ref(), &resource, ctxt);
                     if let Some(creator) = creator {
                         let pat = &local.pat;
                         use Pat::*;
@@ -302,18 +305,19 @@ pub fn resource_creation_from_block(
             _ => {}
         };
     }
+    // TODO: Shouldn't we call ctxt.exit_block() here?
     None
 }
 
 pub fn resource_creation_from_expr<'res>(
     expr: &Expr,
     resource: &'res Resource,
-    uses: &Vec<UsePath>,
+    ctxt: &mut Context,
 ) -> Option<&'res Creator> {
     use Expr::*;
     match expr {
         Call(expr) => {
-            let trimmed_res = resource.single.trim_by_use_paths(uses);
+            let trimmed_res = resource.single.trim_by_use_paths(ctxt.iter());
             // Check if the function call is appropriate.
             match expr.func.as_ref() {
                 Path(path_expr) => {
@@ -326,7 +330,7 @@ pub fn resource_creation_from_expr<'res>(
                             println!("Found {}", id);
                             if let Some(rest) = &resource.rest {
                                 for arg in &expr.args {
-                                    if resource_creation_from_expr(arg, rest.as_ref(), uses)
+                                    if resource_creation_from_expr(arg, rest.as_ref(), ctxt)
                                         .is_some()
                                     {
                                         return Some(&resource.single.creators[idx]);
@@ -342,7 +346,7 @@ pub fn resource_creation_from_expr<'res>(
             }
             // Otherwise check the args
             for arg in &expr.args {
-                let creator = resource_creation_from_expr(arg, &resource, uses);
+                let creator = resource_creation_from_expr(arg, &resource, ctxt);
                 if creator.is_some() {
                     return creator;
                 }
@@ -413,7 +417,7 @@ mod test {
             ))],
         };
         assert_eq!(
-            reciever_res.trim_by_use_paths(&&use_paths),
+            reciever_res.trim_by_use_paths(use_paths.iter()),
             trimed_reciever_res
         );
     }

@@ -2,6 +2,7 @@ use std::io::prelude::*;
 use std::{env, fs::File, process};
 
 use syn::Item;
+use undertaker::context::Context;
 use undertaker::resource;
 use undertaker::resource::{Creator, DirectCreator, Resource, TupleCreator};
 use undertaker::uses;
@@ -54,6 +55,8 @@ fn main() {
     .to_owned();
 
     let top_uses = uses::extract_global_uses(&ast);
+    let mut ctx = Context::new();
+    ctx.add_use_paths(top_uses);
 
     for item in ast.items {
         if let Item::Fn(func) = item {
@@ -62,21 +65,21 @@ fn main() {
                 let obj = resource::resource_creation_from_block(
                     func.block.as_ref(),
                     &reciever_res,
-                    &top_uses,
+                    &mut ctx,
                 )
                 .unwrap();
                 println!("{}", obj);
                 let obj = resource::resource_creation_from_block(
                     func.block.as_ref(),
                     &notify_res,
-                    &top_uses,
+                    &mut ctx,
                 )
                 .unwrap();
                 println!("{}", obj);
                 let obj = resource::resource_creation_from_block(
                     func.block.as_ref(),
                     &arc_notify,
-                    &top_uses,
+                    &mut ctx,
                 )
                 .unwrap();
                 println!("{}", obj);
