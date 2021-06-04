@@ -62,6 +62,8 @@ fn main() {
         if let Item::Fn(func) = item {
             let sig = &func.sig;
             if sig.ident.to_string() == String::from("main") {
+                ctx.enter_block();
+
                 let obj = resource::resource_creation_from_block(
                     func.block.as_ref(),
                     &reciever_res,
@@ -69,6 +71,7 @@ fn main() {
                 )
                 .unwrap();
                 println!("{}", obj);
+
                 let obj = resource::resource_creation_from_block(
                     func.block.as_ref(),
                     &notify_res,
@@ -76,6 +79,7 @@ fn main() {
                 )
                 .unwrap();
                 println!("{}", obj);
+
                 let obj = resource::resource_creation_from_block(
                     func.block.as_ref(),
                     &arc_notify,
@@ -83,6 +87,9 @@ fn main() {
                 )
                 .unwrap();
                 println!("{}", obj);
+
+                println!("\n{}", ctx);
+                ctx.exit_block();
                 break;
             }
         }

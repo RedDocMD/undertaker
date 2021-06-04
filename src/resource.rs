@@ -263,7 +263,7 @@ pub fn resource_creation_from_block(
 ) -> Option<Object> {
     // Adjust use paths to block
     let block_uses = extract_block_uses(block);
-    ctxt.enter_block();
+    // Assume that a ctxt is in the right block.
     ctxt.add_use_paths(block_uses);
 
     for stmt in &block.stmts {

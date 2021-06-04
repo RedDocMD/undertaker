@@ -1,4 +1,7 @@
 use std::collections::HashMap;
+use std::fmt;
+use std::fmt::Display;
+use std::fmt::Formatter;
 
 use crate::resource::Object;
 use crate::uses::{extend_path_once, UsePath};
@@ -41,6 +44,21 @@ impl Context {
 
     pub fn iter(&self) -> PathIter<'_> {
         PathIter::new(&self)
+    }
+
+    pub fn add_binding(&mut self, id: String, ob: Object) {
+        self.env.add_binding(id, ob);
+    }
+}
+
+impl Display for Context {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Use paths:")?;
+        for path in self.iter() {
+            writeln!(f, "  {}", path)?;
+        }
+        writeln!(f, "Bindings:")?;
+        write!(f, "{}", self.env)
     }
 }
 
@@ -118,6 +136,25 @@ impl Environment {
     fn exit_block(&mut self) {
         self.block_envs.pop();
     }
+
+    fn add_binding(&mut self, id: String, ob: Object) {
+        // Safe to unwrap because we have at least the global block
+        let block = self.block_envs.last_mut().unwrap();
+        block.add_binding(id, ob);
+    }
+}
+
+impl Display for Environment {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let mut padding = String::new();
+        for block in &self.block_envs {
+            padding += "  ";
+            for (_, ob) in &block.id_map {
+                write!(f, "{}{}\n", padding, ob)?;
+            }
+        }
+        Ok(())
+    }
 }
 
 impl BlockEnvironment {
@@ -125,6 +162,10 @@ impl BlockEnvironment {
         Self {
             id_map: HashMap::new(),
         }
+    }
+
+    fn add_binding(&mut self, id: String, ob: Object) {
+        self.id_map.insert(id, ob);
     }
 }
 
