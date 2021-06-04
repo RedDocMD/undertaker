@@ -63,6 +63,8 @@ fn main() {
             let sig = &func.sig;
             if sig.ident.to_string() == String::from("main") {
                 ctx.enter_block();
+                let block_uses = uses::extract_block_uses(func.block.as_ref());
+                ctx.add_use_paths(block_uses);
 
                 let obj = resource::resource_creation_from_block(
                     func.block.as_ref(),

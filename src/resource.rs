@@ -158,6 +158,7 @@ impl TupleCreator {
     }
 }
 
+#[derive(Clone)]
 pub struct Object {
     ident: String,
     resource: Resource,
@@ -261,11 +262,6 @@ pub fn resource_creation_from_block(
     resource: &Resource,
     ctxt: &mut Context,
 ) -> Option<Object> {
-    // Adjust use paths to block
-    let block_uses = extract_block_uses(block);
-    // Assume that a ctxt is in the right block.
-    ctxt.add_use_paths(block_uses);
-
     for stmt in &block.stmts {
         use syn::Stmt::*;
         match stmt {
@@ -277,19 +273,23 @@ pub fn resource_creation_from_block(
                         use Pat::*;
                         match pat {
                             Ident(pat) => {
-                                return Some(Object {
+                                let ob = Object {
                                     ident: pat.ident.to_string(),
                                     resource: resource.clone(),
-                                });
+                                };
+                                ctxt.add_binding(ob.ident.clone(), ob.clone());
+                                return Some(ob);
                             }
                             Tuple(pat) => {
                                 if let Creator::Tuple(TupleCreator { ret_idx, .. }) = creator {
                                     let pat = pat.elems.iter().skip(*ret_idx).next().unwrap();
                                     if let Ident(lit) = pat {
-                                        return Some(Object {
+                                        let ob = Object {
                                             ident: lit.ident.to_string(),
                                             resource: resource.clone(),
-                                        });
+                                        };
+                                        ctxt.add_binding(ob.ident.clone(), ob.clone());
+                                        return Some(ob);
                                     } else {
                                         unreachable!("Did not expect anything other than a literal pattern here");
                                     }
@@ -305,7 +305,6 @@ pub fn resource_creation_from_block(
             _ => {}
         };
     }
-    // TODO: Shouldn't we call ctxt.exit_block() here?
     None
 }
 
