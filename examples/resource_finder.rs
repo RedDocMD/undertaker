@@ -66,29 +66,38 @@ fn main() {
                 let block_uses = uses::extract_block_uses(func.block.as_ref());
                 ctx.add_use_paths(block_uses);
 
-                let obj = resource::resource_creation_from_block(
+                let id = resource::resource_creation_from_block(
                     func.block.as_ref(),
                     &reciever_res,
                     &mut ctx,
-                )
-                .unwrap();
-                println!("{}", obj);
+                );
+                println!(
+                    "{} => {}",
+                    id.as_ref().unwrap(),
+                    ctx.get_binding(id.as_ref().unwrap()).unwrap(),
+                );
 
-                let obj = resource::resource_creation_from_block(
+                let id = resource::resource_creation_from_block(
                     func.block.as_ref(),
                     &notify_res,
                     &mut ctx,
-                )
-                .unwrap();
-                println!("{}", obj);
+                );
+                println!(
+                    "{} => {}",
+                    id.as_ref().unwrap(),
+                    ctx.get_binding(id.as_ref().unwrap()).unwrap(),
+                );
 
-                let obj = resource::resource_creation_from_block(
+                let id = resource::resource_creation_from_block(
                     func.block.as_ref(),
                     &arc_notify,
                     &mut ctx,
-                )
-                .unwrap();
-                println!("{}", obj);
+                );
+                println!(
+                    "{} => {}",
+                    id.as_ref().unwrap(),
+                    ctx.get_binding(id.as_ref().unwrap()).unwrap(),
+                );
 
                 println!("\n{}", ctx);
                 ctx.exit_block();

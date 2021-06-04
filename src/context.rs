@@ -49,6 +49,10 @@ impl Context {
     pub fn add_binding(&mut self, id: String, ob: Object) {
         self.env.add_binding(id, ob);
     }
+
+    pub fn get_binding(&self, id: &String) -> Option<&Object> {
+        self.env.get_binding(id)
+    }
 }
 
 impl Display for Context {
@@ -142,6 +146,16 @@ impl Environment {
         let block = self.block_envs.last_mut().unwrap();
         block.add_binding(id, ob);
     }
+
+    fn get_binding(&self, id: &String) -> Option<&Object> {
+        for block in self.block_envs.iter().rev() {
+            let binding = block.get_binding(id);
+            if binding.is_some() {
+                return binding;
+            }
+        }
+        None
+    }
 }
 
 impl Display for Environment {
@@ -166,6 +180,10 @@ impl BlockEnvironment {
 
     fn add_binding(&mut self, id: String, ob: Object) {
         self.id_map.insert(id, ob);
+    }
+
+    fn get_binding(&self, id: &String) -> Option<&Object> {
+        self.id_map.get(id)
     }
 }
 

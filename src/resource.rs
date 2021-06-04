@@ -261,7 +261,7 @@ pub fn resource_creation_from_block(
     block: &Block,
     resource: &Resource,
     ctxt: &mut Context,
-) -> Option<Object> {
+) -> Option<String> {
     for stmt in &block.stmts {
         use syn::Stmt::*;
         match stmt {
@@ -273,23 +273,25 @@ pub fn resource_creation_from_block(
                         use Pat::*;
                         match pat {
                             Ident(pat) => {
+                                let ident = pat.ident.to_string();
                                 let ob = Object {
-                                    ident: pat.ident.to_string(),
+                                    ident: ident.clone(),
                                     resource: resource.clone(),
                                 };
-                                ctxt.add_binding(ob.ident.clone(), ob.clone());
-                                return Some(ob);
+                                ctxt.add_binding(ident.clone(), ob);
+                                return Some(ident);
                             }
                             Tuple(pat) => {
                                 if let Creator::Tuple(TupleCreator { ret_idx, .. }) = creator {
                                     let pat = pat.elems.iter().skip(*ret_idx).next().unwrap();
                                     if let Ident(lit) = pat {
+                                        let ident = lit.ident.to_string();
                                         let ob = Object {
-                                            ident: lit.ident.to_string(),
+                                            ident: ident.clone(),
                                             resource: resource.clone(),
                                         };
-                                        ctxt.add_binding(ob.ident.clone(), ob.clone());
-                                        return Some(ob);
+                                        ctxt.add_binding(ident.clone(), ob);
+                                        return Some(ident);
                                     } else {
                                         unreachable!("Did not expect anything other than a literal pattern here");
                                     }
@@ -326,7 +328,6 @@ pub fn resource_creation_from_expr<'res>(
                             Creator::Tuple(TupleCreator { id, args, .. }) => (id, args),
                         };
                         if match_expr_path(id, &path_expr.path) {
-                            println!("Found {}", id);
                             if let Some(rest) = &resource.rest {
                                 for arg in &expr.args {
                                     if resource_creation_from_expr(arg, rest.as_ref(), ctxt)
