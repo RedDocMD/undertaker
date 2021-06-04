@@ -237,12 +237,26 @@ pub fn extend_path_once(
         }
         if !found_match {
             // Then try adding in all the globs
+
+            // FIXME: This doesn't work!
+            // We can have something like:
+            //
+            // use std::path::*;
+            // fn foo() {
+            //     use std::fs::File;
+            //     ...
+            // }
+            //
+            // The following code will try try to construct the following:
+            // use std::path::std::fs::File, which is garbage.
             parents
                 .iter()
                 .filter(|x| *x.components.last().unwrap() == UsePathComponent::Glob)
                 .for_each(|x| {
                     new_children.push(join_paths(x, child));
                 });
+            // FIXME: This is a hack for the above problem.
+            new_children.push(child.clone());
         }
     }
     Ok(new_children)
@@ -376,6 +390,7 @@ fn foo<U: AsRef<Path>>(p: U) {
         let extended = extend_path_once(&parents, &children).unwrap();
         let extended_expected = vec![
             path!["std", "fs", "File,Dumb"],
+            path!["File,Dumb"],
             path!["std", "path", "Component", "*"],
         ];
         assert_eq!(extended, extended_expected);
@@ -389,8 +404,10 @@ fn foo<U: AsRef<Path>>(p: U) {
         let extended_expected = vec![
             path!["std", "fs", "File,Dumb"],
             path!["std", "path", "File,Dumb"],
+            path!["File,Dumb"],
             path!["std", "fs", "Component", "*"],
             path!["std", "path", "Component", "*"],
+            path!["Component", "*"]
         ];
         assert_eq!(extended, extended_expected);
     }

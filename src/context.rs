@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::resource::Object;
-use crate::uses::UsePath;
+use crate::uses::{extend_path_once, UsePath};
 
 type BlockUsePaths = Vec<UsePath>;
 
@@ -33,8 +33,10 @@ impl Context {
     /// Adds paths to the current block.
     pub fn add_use_paths(&mut self, paths: Vec<UsePath>) {
         // Safe since there is atleast the global scope.
-        let last = self.use_paths.last_mut().unwrap();
+        let parents: Vec<UsePath> = self.iter().cloned().collect();
         let mut paths = paths;
+        paths = extend_path_once(&parents, &paths).unwrap();
+        let last = self.use_paths.last_mut().unwrap();
         last.append(&mut paths);
     }
 
