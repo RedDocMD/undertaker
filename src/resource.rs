@@ -286,7 +286,8 @@ pub fn resource_creation_from_block(
     block: &Block,
     resource: &Resource,
     ctxt: &mut Context,
-) -> Option<String> {
+) -> Vec<String> {
+    let mut identifiers = Vec::new();
     for stmt in &block.stmts {
         use syn::Stmt::*;
         match stmt {
@@ -304,7 +305,7 @@ pub fn resource_creation_from_block(
                                     resource: resource.clone(),
                                 };
                                 ctxt.add_binding(ident.clone(), ob);
-                                return Some(ident);
+                                identifiers.push(ident);
                             }
                             Tuple(pat) => {
                                 if let CreatorType::Tuple(TupleCreator { ret_idx, .. }) =
@@ -318,7 +319,7 @@ pub fn resource_creation_from_block(
                                             resource: resource.clone(),
                                         };
                                         ctxt.add_binding(ident.clone(), ob);
-                                        return Some(ident);
+                                        identifiers.push(ident);
                                     } else {
                                         unreachable!("Did not expect anything other than a literal pattern here");
                                     }
@@ -334,7 +335,7 @@ pub fn resource_creation_from_block(
             _ => {}
         };
     }
-    None
+    identifiers
 }
 
 pub fn resource_creation_from_expr<'res>(
@@ -375,14 +376,49 @@ pub fn resource_creation_from_expr<'res>(
                 _ => {}
             }
             // Otherwise check the args
-            for arg in &expr.args {
-                let creator = resource_creation_from_expr(arg, &resource, ctxt);
-                if creator.is_some() {
-                    return creator;
+            // for arg in &expr.args {
+            //     let creator = resource_creation_from_expr(arg, &resource, ctxt);
+            //     if creator.is_some() {
+            //         return creator;
+            //     }
+            // }
+        }
+        MethodCall(expr) => {
+            for creator in &resource.single.creators {
+                if creator.id_type != CreatorIdType::Method {
+                    continue;
+                }
+                let id = match &creator.ctype {
+                    CreatorType::Direct(DirectCreator { id, .. }) => id,
+                    CreatorType::Tuple(TupleCreator { id, .. }) => id,
+                };
+                let method_name = expr.method.to_string();
+                let id_method_name = id.components().last().unwrap();
+                match id_method_name {
+                    UsePathComponent::Name(name) => {
+                        if *name != method_name {
+                            continue;
+                        }
+                    }
+                    _ => continue,
+                };
+                let recv_name = match expr.receiver.as_ref() {
+                    Path(path) => {
+                        let segments = &path.path.segments;
+                        if segments.len() != 1 {
+                            continue;
+                        }
+                        segments[0].ident.to_string()
+                    }
+                    _ => unimplemented!(),
+                };
+                if let Some(recv_ob) = ctxt.get_binding(&recv_name) {
+                    if recv_ob.resource == *resource {
+                        return Some(creator);
+                    }
                 }
             }
         }
-        MethodCall(expr) => {}
         _ => {}
     };
     None

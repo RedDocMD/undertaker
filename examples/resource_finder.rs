@@ -59,7 +59,7 @@ fn main() {
                     path!["std", "sync", "Arc", "clone"],
                     vec![],
                 )),
-                CreatorIdType::Method,
+                CreatorIdType::Function,
             ),
         ],
     )
@@ -78,40 +78,15 @@ fn main() {
                 let block_uses = uses::extract_block_uses(func.block.as_ref());
                 ctx.add_use_paths(block_uses);
 
-                let id = resource::resource_creation_from_block(
+                resource::resource_creation_from_block(
                     func.block.as_ref(),
                     &reciever_res,
                     &mut ctx,
                 );
-                println!(
-                    "{} => {}",
-                    id.as_ref().unwrap(),
-                    ctx.get_binding(id.as_ref().unwrap()).unwrap(),
-                );
+                resource::resource_creation_from_block(func.block.as_ref(), &notify_res, &mut ctx);
+                resource::resource_creation_from_block(func.block.as_ref(), &arc_notify, &mut ctx);
 
-                let id = resource::resource_creation_from_block(
-                    func.block.as_ref(),
-                    &notify_res,
-                    &mut ctx,
-                );
-                println!(
-                    "{} => {}",
-                    id.as_ref().unwrap(),
-                    ctx.get_binding(id.as_ref().unwrap()).unwrap(),
-                );
-
-                let id = resource::resource_creation_from_block(
-                    func.block.as_ref(),
-                    &arc_notify,
-                    &mut ctx,
-                );
-                println!(
-                    "{} => {}",
-                    id.as_ref().unwrap(),
-                    ctx.get_binding(id.as_ref().unwrap()).unwrap(),
-                );
-
-                println!("\n{}", ctx);
+                println!("{}", ctx);
                 ctx.exit_block();
                 break;
             }
