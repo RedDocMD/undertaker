@@ -40,21 +40,29 @@ impl SingleResource {
         for creator in &self.creators {
             let mut new_creator = creator.clone();
             for path in paths.clone() {
-                match creator {
-                    Creator::Tuple(creator) => {
-                        if let Some(new_id) = trim_common(&creator.id, path) {
-                            new_creator = Creator::Tuple(TupleCreator::new(
-                                new_id,
-                                creator.args.clone(),
-                                creator.ret_idx,
-                            ));
+                match &creator.ctype {
+                    CreatorType::Tuple(creator_type) => {
+                        if let Some(new_id) = trim_common(&creator_type.id, path) {
+                            new_creator = Creator::new(
+                                CreatorType::Tuple(TupleCreator::new(
+                                    new_id,
+                                    creator_type.args.clone(),
+                                    creator_type.ret_idx,
+                                )),
+                                creator.id_type,
+                            );
                             break;
                         }
                     }
-                    Creator::Direct(creator) => {
-                        if let Some(new_id) = trim_common(&creator.id, path) {
-                            new_creator =
-                                Creator::Direct(DirectCreator::new(new_id, creator.args.clone()));
+                    CreatorType::Direct(creator_type) => {
+                        if let Some(new_id) = trim_common(&creator_type.id, path) {
+                            new_creator = Creator::new(
+                                CreatorType::Direct(DirectCreator::new(
+                                    new_id,
+                                    creator_type.args.clone(),
+                                )),
+                                creator.id_type,
+                            );
                             break;
                         }
                     }
@@ -128,7 +136,25 @@ fn trim_common(id: &ResourceID, path: &UsePath) -> Option<ResourceID> {
 /// both the sender and the reciever as a tuple. Hence, the second arg
 /// is the index of the tuple we are interested in.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Creator {
+pub struct Creator {
+    ctype: CreatorType,
+    id_type: CreatorIdType,
+}
+
+impl Creator {
+    pub fn new(ctype: CreatorType, id_type: CreatorIdType) -> Self {
+        Self { ctype, id_type }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CreatorIdType {
+    Function,
+    Method,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CreatorType {
     Direct(DirectCreator),
     Tuple(TupleCreator),
 }
@@ -144,7 +170,6 @@ impl DirectCreator {
         Self { id, args }
     }
 }
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TupleCreator {
     id: ResourceID,
@@ -282,7 +307,9 @@ pub fn resource_creation_from_block(
                                 return Some(ident);
                             }
                             Tuple(pat) => {
-                                if let Creator::Tuple(TupleCreator { ret_idx, .. }) = creator {
+                                if let CreatorType::Tuple(TupleCreator { ret_idx, .. }) =
+                                    &creator.ctype
+                                {
                                     let pat = pat.elems.iter().skip(*ret_idx).next().unwrap();
                                     if let Ident(lit) = pat {
                                         let ident = lit.ident.to_string();
@@ -323,10 +350,13 @@ pub fn resource_creation_from_expr<'res>(
             match expr.func.as_ref() {
                 Path(path_expr) => {
                     for (idx, creator) in trimmed_res.creators.iter().enumerate() {
-                        let (id, _) = match creator {
-                            Creator::Direct(DirectCreator { id, args, .. }) => (id, args),
-                            Creator::Tuple(TupleCreator { id, args, .. }) => (id, args),
+                        let id = match &creator.ctype {
+                            CreatorType::Direct(DirectCreator { id, .. }) => id,
+                            CreatorType::Tuple(TupleCreator { id, .. }) => id,
                         };
+                        if creator.id_type != CreatorIdType::Function {
+                            continue;
+                        }
                         if match_expr_path(id, &path_expr.path) {
                             if let Some(rest) = &resource.rest {
                                 for arg in &expr.args {
@@ -352,6 +382,7 @@ pub fn resource_creation_from_expr<'res>(
                 }
             }
         }
+        MethodCall(expr) => {}
         _ => {}
     };
     None
@@ -396,11 +427,14 @@ mod test {
     fn test_trim_by_use_path() {
         let reciever_res = SingleResource {
             id: path!["tokio", "sync", "oneshot", "Reciever"],
-            creators: vec![Creator::Tuple(TupleCreator::new(
-                path!["tokio", "sync", "oneshot", "channel"],
-                vec![],
-                1,
-            ))],
+            creators: vec![Creator::new(
+                CreatorType::Tuple(TupleCreator::new(
+                    path!["tokio", "sync", "oneshot", "channel"],
+                    vec![],
+                    1,
+                )),
+                CreatorIdType::Function,
+            )],
         };
         let use_paths = vec![
             path!["std", "fs", "File"],
@@ -410,11 +444,10 @@ mod test {
         ];
         let trimed_reciever_res = SingleResource {
             id: path!["one", "Reciever"],
-            creators: vec![Creator::Tuple(TupleCreator::new(
-                path!["one", "channel"],
-                vec![],
-                1,
-            ))],
+            creators: vec![Creator::new(
+                CreatorType::Tuple(TupleCreator::new(path!["one", "channel"], vec![], 1)),
+                CreatorIdType::Function,
+            )],
         };
         assert_eq!(
             reciever_res.trim_by_use_paths(use_paths.iter()),

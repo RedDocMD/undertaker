@@ -3,7 +3,7 @@ use std::{env, fs::File, process};
 
 use syn::Item;
 use undertaker::context::Context;
-use undertaker::resource;
+use undertaker::resource::{self, CreatorIdType, CreatorType};
 use undertaker::resource::{Creator, DirectCreator, Resource, TupleCreator};
 use undertaker::uses;
 
@@ -25,30 +25,42 @@ fn main() {
     let ast = syn::parse_file(&src).expect(&format!("Failed to parse {}", filename));
     let reciever_res = Resource::single(
         path!["tokio", "sync", "oneshot", "Reciever"],
-        vec![Creator::Tuple(TupleCreator::new(
-            path!["tokio", "sync", "oneshot", "channel"],
-            vec![],
-            1,
-        ))],
+        vec![Creator::new(
+            CreatorType::Tuple(TupleCreator::new(
+                path!["tokio", "sync", "oneshot", "channel"],
+                vec![],
+                1,
+            )),
+            CreatorIdType::Function,
+        )],
     );
     let notify_res = Resource::single(
         path!["tokio", "sync", "Notify"],
-        vec![Creator::Direct(DirectCreator::new(
-            path!["tokio", "sync", "Notify", "new"],
-            vec![],
-        ))],
+        vec![Creator::new(
+            CreatorType::Direct(DirectCreator::new(
+                path!["tokio", "sync", "Notify", "new"],
+                vec![],
+            )),
+            CreatorIdType::Function,
+        )],
     );
     let arc_notify = Resource::single(
         path!["std", "sync", "Arc"],
         vec![
-            Creator::Direct(DirectCreator::new(
-                path!["std", "sync", "Arc", "new"],
-                vec![],
-            )),
-            Creator::Direct(DirectCreator::new(
-                path!["std", "sync", "Arc", "clone"],
-                vec![],
-            )),
+            Creator::new(
+                CreatorType::Direct(DirectCreator::new(
+                    path!["std", "sync", "Arc", "new"],
+                    vec![],
+                )),
+                CreatorIdType::Function,
+            ),
+            Creator::new(
+                CreatorType::Direct(DirectCreator::new(
+                    path!["std", "sync", "Arc", "clone"],
+                    vec![],
+                )),
+                CreatorIdType::Method,
+            ),
         ],
     )
     .nest(notify_res.as_single().unwrap().clone())
