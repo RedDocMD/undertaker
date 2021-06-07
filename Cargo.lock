@@ -39,6 +39,7 @@ dependencies = [
 name = "undertaker"
 version = "0.1.0"
 dependencies = [
+ "linked-hash-map",
  "syn",
  "yaml-rust",
 ]

@@ -19,13 +19,40 @@ callables:
         - V
       ctype: Function
       args:
-        - Res:
-            - type: Vec
-            - type_params:
-              - T
+        - cat: Res
+          name: Vec
+          type_params:
+            - T
       ret:
-        One:
-          Res:
-            - type: Vec
-            - type_params:
-              - V
+        - cat: Res
+          name: Vec
+          type_params:
+            - V
+  - Arc_new:
+      id: "std::sync::Arc::create"
+      type_params:
+        - T
+      ctype: Function
+      args:
+        - cat: Type
+          type_param: T
+      ret:
+        - cat: Res
+          name: Arc
+          type_params:
+            - T
+  - Arc_clone:
+      id: "std::sync::Arc::clone"
+      type_params:
+        - T
+      ctype: Function
+      args:
+        - cat: Res
+          name: Arc
+          type_params:
+            - T
+      ret:
+        - cat: Res
+          name: Arc
+          type_params:
+            - T
