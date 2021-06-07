@@ -1,0 +1,31 @@
+resources:
+  - Arc:
+      id: "std::sync::Arc"
+      type_params:
+        - T
+  - Notify:
+      id: "tokio::sync::Notify"
+      type_params: []
+  - Vec:
+      id: "std::vec::Vec"
+      type_params:
+        - T
+
+callables:
+  - map:
+      id: "crate::func::map"
+      type_params:
+        - T
+        - V
+      ctype: Function
+      args:
+        - Res:
+            - type: Vec
+            - type_params:
+              - T
+      ret:
+        One:
+          Res:
+            - type: Vec
+            - type_params:
+              - V

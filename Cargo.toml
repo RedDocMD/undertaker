@@ -8,3 +8,4 @@ edition = "2018"
 
 [dependencies]
 syn = {version = "1.0.72", features = ["full", "extra-traits"]}
+yaml-rust = "0.4.5"
