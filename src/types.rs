@@ -1,8 +1,9 @@
 use std::{
     collections::HashMap,
     error::Error,
-    fmt::{self, Display, Formatter},
+    fmt::{self, Display, Formatter, Write},
     fs::File,
+    hash::{Hash, Hasher},
     io::Read,
     path,
 };
@@ -20,7 +21,7 @@ pub struct GenericResource {
     type_params: Vec<TypeParam>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq)]
 pub struct TypeParam {
     name: String,
 }
@@ -39,6 +40,12 @@ impl PartialEq for TypeParam {
     }
 }
 
+impl Hash for TypeParam {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.name.hash(state);
+    }
+}
+
 impl GenericResource {
     fn substitute_type_params(&self, new_params: Vec<TypeParam>) -> Option<Self> {
         if new_params.len() != self.type_params.len() {
@@ -49,6 +56,59 @@ impl GenericResource {
             type_params: new_params,
         })
     }
+
+    fn is_auto_monomorphisable(&self) -> bool {
+        self.type_params.is_empty()
+    }
+
+    fn auto_monomorphise(&self) -> Option<Resource> {
+        if self.is_auto_monomorphisable() {
+            Some(Resource {
+                id: self.id.clone(),
+                type_map: HashMap::new(),
+            })
+        } else {
+            None
+        }
+    }
+
+    fn monomorphise(&self, type_map: HashMap<TypeParam, Resource>) -> Option<Resource> {
+        if type_map.len() != self.type_params.len() {
+            return None;
+        }
+        let valid = self
+            .type_params
+            .iter()
+            .all(|type_param| type_map.contains_key(type_param));
+        if !valid {
+            return None;
+        }
+        Some(Resource {
+            id: self.id.clone(),
+            type_map,
+        })
+    }
+}
+
+impl Display for GenericResource {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let params: Vec<String> = self
+            .type_params
+            .iter()
+            .map(|item| item.name.clone())
+            .collect();
+        let params_str = params.join(", ");
+        write!(f, "{}", self.id)?;
+        if params.len() != 0 {
+            write!(f, "<{}>", params_str)?;
+        }
+        Ok(())
+    }
+}
+
+pub struct Resource {
+    id: ResourceID,
+    type_map: HashMap<TypeParam, Resource>,
 }
 
 #[derive(Debug)]
@@ -58,6 +118,32 @@ pub struct GenericCallable {
     ctype: CallableType,
     args: Vec<GenericArg>,
     ret: GenericReturn,
+}
+
+impl Display for GenericCallable {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let args: Vec<String> = self
+            .args
+            .iter()
+            .map(|item| {
+                let mut output = String::new();
+                write!(&mut output, "{}", item).expect("failed to string");
+                output
+            })
+            .collect();
+        let args_str = args.join(", ");
+        let params: Vec<String> = self
+            .type_params
+            .iter()
+            .map(|item| item.name.clone())
+            .collect();
+        let params_str = params.join(", ");
+        write!(f, "{}", self.id)?;
+        if params.len() != 0 {
+            write!(f, "<{}>", params_str)?;
+        }
+        write!(f, "({}) {}", args_str, self.ret)
+    }
 }
 
 #[derive(Debug)]
@@ -78,15 +164,55 @@ impl CallableType {
     }
 }
 
+impl Display for CallableType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Function => write!(f, "Function"),
+            Self::Method => write!(f, "Method"),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum GenericArg {
     Type(TypeParam),
     Res(GenericResource),
 }
 
+impl Display for GenericArg {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Type(param) => write!(f, "{}", param.name),
+            Self::Res(res) => write!(f, "{}", res),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct GenericReturn {
     rets: Vec<GenericArg>,
+}
+
+impl Display for GenericReturn {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let args: Vec<String> = self
+            .rets
+            .iter()
+            .map(|item| {
+                let mut output = String::new();
+                write!(&mut output, "{}", item).expect("failed to string");
+                output
+            })
+            .collect();
+        let args_str = args.join(", ");
+        if args.len() == 1 {
+            write!(f, "-> {}", args_str)
+        } else if args.len() > 1 {
+            write!(f, "-> ({})", args_str)
+        } else {
+            Ok(())
+        }
+    }
 }
 
 pub fn parse_resource_file<T: AsRef<path::Path>>(filepath: T) -> Result<(), Box<dyn Error>> {
@@ -107,9 +233,11 @@ pub fn parse_resource_file<T: AsRef<path::Path>>(filepath: T) -> Result<(), Box<
     let mut resources = HashMap::new();
     for yaml in resources_yaml {
         let (name, resource) = parse_resource_from_yaml(yaml)?;
-        println!("{} => {:?}", name, resource);
+        println!("{} => {}", name, resource);
         resources.insert(name, resource);
     }
+
+    println!();
 
     // Parse callables
     let callables_yaml = doc
@@ -121,7 +249,7 @@ pub fn parse_resource_file<T: AsRef<path::Path>>(filepath: T) -> Result<(), Box<
     let mut callables = HashMap::new();
     for yaml in callables_yaml {
         let (name, callable) = parse_callable_from_yaml(yaml, &resources)?;
-        println!("{} => {:?}", name, callable);
+        println!("{} => {}", name, callable);
         callables.insert(name, callable);
     }
     Ok(())
