@@ -21,9 +21,21 @@ pub struct GenericResource {
     type_params: Vec<TypeParam>,
 }
 
-#[derive(Debug, Eq)]
+#[derive(Debug, Eq, Clone)]
 pub struct TypeParam {
     name: String,
+}
+
+pub trait Monomorphisable<T> {
+    fn monomorphise(&self, type_map: HashMap<TypeParam, Resource>) -> Option<T>;
+
+    fn is_auto_monomorphisable(&self) -> bool {
+        self.monomorphise(HashMap::new()).is_some()
+    }
+
+    fn auto_monomorphise(&self) -> Option<T> {
+        self.monomorphise(HashMap::new())
+    }
 }
 
 impl TypeParam {
@@ -56,22 +68,9 @@ impl GenericResource {
             type_params: new_params,
         })
     }
+}
 
-    fn is_auto_monomorphisable(&self) -> bool {
-        self.type_params.is_empty()
-    }
-
-    fn auto_monomorphise(&self) -> Option<Resource> {
-        if self.is_auto_monomorphisable() {
-            Some(Resource {
-                id: self.id.clone(),
-                type_map: HashMap::new(),
-            })
-        } else {
-            None
-        }
-    }
-
+impl Monomorphisable<Resource> for GenericResource {
     fn monomorphise(&self, type_map: HashMap<TypeParam, Resource>) -> Option<Resource> {
         if type_map.len() != self.type_params.len() {
             return None;
@@ -106,6 +105,7 @@ impl Display for GenericResource {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct Resource {
     id: ResourceID,
     type_map: HashMap<TypeParam, Resource>,
@@ -118,6 +118,13 @@ pub struct GenericCallable {
     ctype: CallableType,
     args: Vec<GenericArg>,
     ret: GenericReturn,
+}
+
+pub struct Callable {
+    id: ResourceID,
+    ctype: CallableType,
+    args: Vec<Resource>,
+    ret: Return,
 }
 
 impl Display for GenericCallable {
@@ -146,7 +153,30 @@ impl Display for GenericCallable {
     }
 }
 
-#[derive(Debug)]
+impl Monomorphisable<Callable> for GenericCallable {
+    fn monomorphise(&self, type_map: HashMap<TypeParam, Resource>) -> Option<Callable> {
+        let mut args = Vec::new();
+        for gen_arg in &self.args {
+            if let Some(arg) = gen_arg.monomorphise(type_map.clone()) {
+                args.push(arg);
+            } else {
+                return None;
+            }
+        }
+        if let Some(ret) = self.ret.monomorphise(type_map) {
+            Some(Callable {
+                id: self.id.clone(),
+                ctype: self.ctype,
+                args,
+                ret,
+            })
+        } else {
+            None
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 pub enum CallableType {
     Function,
     Method,
@@ -188,9 +218,22 @@ impl Display for GenericArg {
     }
 }
 
+impl Monomorphisable<Resource> for GenericArg {
+    fn monomorphise(&self, type_map: HashMap<TypeParam, Resource>) -> Option<Resource> {
+        match self {
+            Self::Type(type_param) => type_map.get(type_param).cloned(),
+            Self::Res(gen_res) => gen_res.monomorphise(type_map),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct GenericReturn {
     rets: Vec<GenericArg>,
+}
+
+pub struct Return {
+    rets: Vec<Resource>,
 }
 
 impl Display for GenericReturn {
@@ -212,6 +255,20 @@ impl Display for GenericReturn {
         } else {
             Ok(())
         }
+    }
+}
+
+impl Monomorphisable<Return> for GenericReturn {
+    fn monomorphise(&self, type_map: HashMap<TypeParam, Resource>) -> Option<Return> {
+        let mut rets = Vec::new();
+        for gen_ret in &self.rets {
+            if let Some(ret) = gen_ret.monomorphise(type_map.clone()) {
+                rets.push(ret);
+            } else {
+                return None;
+            }
+        }
+        Some(Return { rets })
     }
 }
 
