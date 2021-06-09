@@ -56,3 +56,21 @@ callables:
           name: Arc
           type_params:
             - T
+
+  - Notify_new:
+      id: "tokio::sync::Notify::new"
+      type_params: []
+      ctype: Function
+      args: []
+      ret:
+        - cat: Res
+          name: Notify
+          type_params: []
+
+creators:
+  - Arc:
+      - Arc_new
+      - Arc_clone
+
+  - Notify:
+      - Notify_new

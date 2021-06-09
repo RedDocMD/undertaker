@@ -15,7 +15,7 @@ use crate::uses::{self, UsePath};
 
 pub type ResourceID = UsePath;
 
-#[derive(Debug)]
+#[derive(Debug, Eq)]
 pub struct GenericResource {
     id: ResourceID,
     type_params: Vec<TypeParam>,
@@ -67,6 +67,18 @@ impl GenericResource {
             id: self.id.clone(),
             type_params: new_params,
         })
+    }
+}
+
+impl PartialEq for GenericResource {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl Hash for GenericResource {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id.to_string().hash(state);
     }
 }
 
@@ -297,18 +309,49 @@ pub fn parse_resource_file<T: AsRef<path::Path>>(filepath: T) -> Result<(), Box<
     println!();
 
     // Parse callables
-    let callables_yaml = doc
-        .get(&Yaml::from_str("callables"))
-        .ok_or(ParseErr::new("no callables key"))?
-        .as_vec()
-        .ok_or(ParseErr::new("expected callables to be an array"))?;
+    let mut callables_opt = None;
+    let mut creators_opt = None;
 
-    let mut callables = HashMap::new();
-    for yaml in callables_yaml {
-        let (name, callable) = parse_callable_from_yaml(yaml, &resources)?;
-        println!("{} => {}", name, callable);
-        callables.insert(name, callable);
+    if let Some(callables_yaml) = doc.get(&Yaml::from_str("callables")) {
+        let callables_yaml = callables_yaml
+            .as_vec()
+            .ok_or(ParseErr::new("expected callables to be an array"))?;
+
+        let mut callables = HashMap::new();
+        for yaml in callables_yaml {
+            let (name, callable) = parse_callable_from_yaml(yaml, &resources)?;
+            println!("{} => {}", name, callable);
+            callables.insert(name, callable);
+        }
+
+        callables_opt = Some(callables);
+        println!();
+
+        if let Some(creators_yaml) = doc.get(&Yaml::from_str("creators")) {
+            let callables = callables_opt.as_ref().unwrap();
+            let creators_yaml = creators_yaml
+                .as_vec()
+                .ok_or(ParseErr::new("expected creators to be an array"))?;
+            let mut creators = HashMap::new();
+            for creator_yaml in creators_yaml {
+                let (res, creators_vec) =
+                    parse_creator_from_yaml(creator_yaml, &resources, &callables)?;
+                let creators_strs: Vec<String> = creators_vec
+                    .iter()
+                    .map(|item| {
+                        let mut str = String::new();
+                        write!(&mut str, "{}", item)
+                            .expect("expected to be able to write to string");
+                        str
+                    })
+                    .collect();
+                println!("{} => {}", res, creators_strs.join(", "));
+                creators.insert(res, creators_vec);
+            }
+            creators_opt = Some(creators);
+        }
     }
+
     Ok(())
 }
 
@@ -492,6 +535,43 @@ fn parse_callable_from_yaml(
         return Ok((name.to_string(), callable));
     }
     unreachable!();
+}
+
+fn parse_creator_from_yaml<'a>(
+    yaml: &Yaml,
+    res_map: &'a HashMap<String, GenericResource>,
+    call_map: &'a HashMap<String, GenericCallable>,
+) -> Result<(&'a GenericResource, Vec<&'a GenericCallable>), Box<dyn Error>> {
+    let hash = yaml
+        .as_hash()
+        .ok_or(ParseErr::new("expected each creator to be a hash"))?;
+    if hash.len() != 1 {
+        return Err(Box::new(ParseErr::new("invalid creator format")));
+    }
+    for (key, value) in hash {
+        let name = key
+            .as_str()
+            .ok_or(ParseErr::new("expected res name of creator to be a string"))?;
+        let res = res_map
+            .get(name)
+            .ok_or(ParseErr(format!("{} is not defined as a resource", name)))?;
+
+        let creators_vec = value
+            .as_vec()
+            .ok_or(ParseErr::new("expected creator names to be a list"))?;
+        let creators: Vec<&GenericCallable> = creators_vec
+            .iter()
+            .map(|item| {
+                let call_name = item.as_str().expect("expected creator name to be a string");
+                call_map
+                    .get(call_name)
+                    .expect(&format!("{} is not defined as a callable", call_name))
+            })
+            .collect();
+
+        return Ok((res, creators));
+    }
+    unreachable!()
 }
 
 #[derive(Debug)]
