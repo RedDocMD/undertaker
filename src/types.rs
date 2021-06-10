@@ -58,6 +58,12 @@ impl Hash for TypeParam {
     }
 }
 
+impl Display for TypeParam {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
+
 impl GenericResource {
     fn substitute_type_params(&self, new_params: Vec<TypeParam>) -> Option<Self> {
         if new_params.len() != self.type_params.len() {
@@ -130,6 +136,26 @@ pub struct Resource {
     type_map: HashMap<TypeParam, Resource>,
 }
 
+impl Display for Resource {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.id)?;
+        if self.type_map.len() != 0 {
+            let reso_strs: Vec<String> = self
+                .type_map
+                .iter()
+                .map(|(name, res)| {
+                    let mut str = String::new();
+                    write!(&mut str, "{} = {}", name, res)
+                        .expect("expected to be able to write to a string");
+                    str
+                })
+                .collect();
+            write!(f, "<{}>", reso_strs.join(", "))?;
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
 pub struct GenericCallable {
     id: ResourceID,
@@ -139,6 +165,7 @@ pub struct GenericCallable {
     ret: GenericReturn,
 }
 
+#[derive(Debug)]
 pub struct Callable {
     id: ResourceID,
     ctype: CallableType,
@@ -251,6 +278,7 @@ pub struct GenericReturn {
     rets: Vec<GenericArg>,
 }
 
+#[derive(Debug)]
 pub struct Return {
     rets: Vec<Resource>,
 }
@@ -375,6 +403,7 @@ pub fn parse_resource_file<T: AsRef<path::Path>>(filepath: T) -> Result<(), Box<
     }
 
     let mut specializations = Vec::new();
+    println!();
 
     if let Some(specialize_yaml) = doc.get(&Yaml::from_str("specialize")) {
         let specialize_yaml = specialize_yaml
@@ -382,7 +411,7 @@ pub fn parse_resource_file<T: AsRef<path::Path>>(filepath: T) -> Result<(), Box<
             .ok_or(ParseErr::new("expected specializartions to be an array"))?;
         for yaml in specialize_yaml {
             let (_, res) = parse_specialization_from_yaml(yaml, &resources)?;
-            // println!("{}", res);
+            println!("{}", res);
             specializations.push(res);
         }
     }
