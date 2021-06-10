@@ -334,7 +334,16 @@ fn primitive_types_as_resources() -> HashMap<String, GenericResource> {
         .collect()
 }
 
-pub fn parse_resource_file<T: AsRef<path::Path>>(filepath: T) -> Result<(), Box<dyn Error>> {
+pub struct ResourceFile {
+    pub gen_resources: HashMap<String, GenericResource>,
+    pub gen_callables: HashMap<String, GenericCallable>,
+    pub gen_creators: HashMap<String, Vec<String>>,
+    pub specializations: Vec<Resource>,
+}
+
+pub fn parse_resource_file<T: AsRef<path::Path>>(
+    filepath: T,
+) -> Result<ResourceFile, Box<dyn Error>> {
     let mut file = File::open(filepath.as_ref())?;
     let mut file_content = String::new();
     file.read_to_string(&mut file_content)?;
@@ -352,58 +361,37 @@ pub fn parse_resource_file<T: AsRef<path::Path>>(filepath: T) -> Result<(), Box<
     let mut resources = primitive_types_as_resources();
     for yaml in resources_yaml {
         let (name, resource) = parse_resource_from_yaml(yaml)?;
-        println!("{} => {}", name, resource);
         resources.insert(name, resource);
     }
 
-    println!();
-
     // Parse callables
-    let mut callables_opt = None;
-    let mut creators_opt = None;
+    let mut callables = HashMap::new();
+    let mut creators = HashMap::new();
 
     if let Some(callables_yaml) = doc.get(&Yaml::from_str("callables")) {
         let callables_yaml = callables_yaml
             .as_vec()
             .ok_or(ParseErr::new("expected callables to be an array"))?;
 
-        let mut callables = HashMap::new();
         for yaml in callables_yaml {
             let (name, callable) = parse_callable_from_yaml(yaml, &resources)?;
-            println!("{} => {}", name, callable);
             callables.insert(name, callable);
         }
 
-        callables_opt = Some(callables);
-        println!();
-
         if let Some(creators_yaml) = doc.get(&Yaml::from_str("creators")) {
-            let callables = callables_opt.as_ref().unwrap();
             let creators_yaml = creators_yaml
                 .as_vec()
                 .ok_or(ParseErr::new("expected creators to be an array"))?;
-            let mut creators = HashMap::new();
+
             for creator_yaml in creators_yaml {
                 let (res, creators_vec) =
                     parse_creator_from_yaml(creator_yaml, &resources, &callables)?;
-                let creators_strs: Vec<String> = creators_vec
-                    .iter()
-                    .map(|item| {
-                        let mut str = String::new();
-                        write!(&mut str, "{}", item)
-                            .expect("expected to be able to write to string");
-                        str
-                    })
-                    .collect();
-                println!("{} => {}", res, creators_strs.join(", "));
                 creators.insert(res, creators_vec);
             }
-            creators_opt = Some(creators);
         }
     }
 
     let mut specializations = Vec::new();
-    println!();
 
     if let Some(specialize_yaml) = doc.get(&Yaml::from_str("specialize")) {
         let specialize_yaml = specialize_yaml
@@ -411,12 +399,16 @@ pub fn parse_resource_file<T: AsRef<path::Path>>(filepath: T) -> Result<(), Box<
             .ok_or(ParseErr::new("expected specializartions to be an array"))?;
         for yaml in specialize_yaml {
             let (_, res) = parse_specialization_from_yaml(yaml, &resources)?;
-            println!("{}", res);
             specializations.push(res);
         }
     }
 
-    Ok(())
+    Ok(ResourceFile {
+        gen_resources: resources,
+        gen_callables: callables,
+        gen_creators: creators,
+        specializations,
+    })
 }
 
 fn parse_resource_from_yaml(yaml: &Yaml) -> Result<(String, GenericResource), Box<dyn Error>> {
@@ -601,11 +593,11 @@ fn parse_callable_from_yaml(
     unreachable!();
 }
 
-fn parse_creator_from_yaml<'a>(
+fn parse_creator_from_yaml(
     yaml: &Yaml,
-    res_map: &'a HashMap<String, GenericResource>,
-    call_map: &'a HashMap<String, GenericCallable>,
-) -> Result<(&'a GenericResource, Vec<&'a GenericCallable>), Box<dyn Error>> {
+    res_map: &HashMap<String, GenericResource>,
+    call_map: &HashMap<String, GenericCallable>,
+) -> Result<(String, Vec<String>), Box<dyn Error>> {
     let hash = yaml
         .as_hash()
         .ok_or(ParseErr::new("expected each creator to be a hash"))?;
@@ -616,24 +608,28 @@ fn parse_creator_from_yaml<'a>(
         let name = key
             .as_str()
             .ok_or(ParseErr::new("expected res name of creator to be a string"))?;
-        let res = res_map
-            .get(name)
-            .ok_or(ParseErr(format!("{} is not defined as a resource", name)))?;
+        if !res_map.contains_key(name) {
+            return Err(Box::new(ParseErr(format!(
+                "{} is not defined as a resource",
+                name
+            ))));
+        }
 
         let creators_vec = value
             .as_vec()
             .ok_or(ParseErr::new("expected creator names to be a list"))?;
-        let creators: Vec<&GenericCallable> = creators_vec
+        let creators: Vec<String> = creators_vec
             .iter()
             .map(|item| {
                 let call_name = item.as_str().expect("expected creator name to be a string");
-                call_map
-                    .get(call_name)
-                    .expect(&format!("{} is not defined as a callable", call_name))
+                if !call_map.contains_key(call_name) {
+                    panic!("{} is not defined as a callable", call_name);
+                }
+                call_name.to_string()
             })
             .collect();
 
-        return Ok((res, creators));
+        return Ok((name.to_string(), creators));
     }
     unreachable!()
 }

@@ -144,3 +144,10 @@ specialize:
               - V:
                   res: String
                   type_map: []
+
+  - Arc<Notify>:
+      res: Arc
+      type_map:
+        - T:
+            res: Notify
+            type_map: []
