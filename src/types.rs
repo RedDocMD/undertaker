@@ -68,6 +68,13 @@ impl GenericResource {
             type_params: new_params,
         })
     }
+
+    fn new_without_types(id: ResourceID) -> Self {
+        Self {
+            id,
+            type_params: vec![],
+        }
+    }
 }
 
 impl PartialEq for GenericResource {
@@ -284,6 +291,21 @@ impl Monomorphisable<Return> for GenericReturn {
     }
 }
 
+fn primitive_types_as_resources() -> HashMap<String, GenericResource> {
+    let types = vec![
+        "bool", "u8", "u16", "u32", "u64", "u128", "i8", "i16", "i32", "i64", "i128", "f32", "f64",
+        "usize", "isize", "char", "str",
+    ];
+
+    types
+        .iter()
+        .map(|item| {
+            let path = uses::convert_to_path(&vec![item.to_string()]).unwrap();
+            (item.to_string(), GenericResource::new_without_types(path))
+        })
+        .collect()
+}
+
 pub fn parse_resource_file<T: AsRef<path::Path>>(filepath: T) -> Result<(), Box<dyn Error>> {
     let mut file = File::open(filepath.as_ref())?;
     let mut file_content = String::new();
@@ -299,7 +321,7 @@ pub fn parse_resource_file<T: AsRef<path::Path>>(filepath: T) -> Result<(), Box<
         .as_vec()
         .ok_or(ParseErr::new("expected resources to be an array"))?;
 
-    let mut resources = HashMap::new();
+    let mut resources = primitive_types_as_resources();
     for yaml in resources_yaml {
         let (name, resource) = parse_resource_from_yaml(yaml)?;
         println!("{} => {}", name, resource);
@@ -349,6 +371,19 @@ pub fn parse_resource_file<T: AsRef<path::Path>>(filepath: T) -> Result<(), Box<
                 creators.insert(res, creators_vec);
             }
             creators_opt = Some(creators);
+        }
+    }
+
+    let mut specializations = Vec::new();
+
+    if let Some(specialize_yaml) = doc.get(&Yaml::from_str("specialize")) {
+        let specialize_yaml = specialize_yaml
+            .as_vec()
+            .ok_or(ParseErr::new("expected specializartions to be an array"))?;
+        for yaml in specialize_yaml {
+            let (_, res) = parse_specialization_from_yaml(yaml, &resources)?;
+            // println!("{}", res);
+            specializations.push(res);
         }
     }
 
@@ -572,6 +607,73 @@ fn parse_creator_from_yaml<'a>(
         return Ok((res, creators));
     }
     unreachable!()
+}
+
+fn parse_specialization_from_yaml(
+    yaml: &Yaml,
+    gen_res_map: &HashMap<String, GenericResource>,
+) -> Result<(String, Resource), Box<dyn Error>> {
+    let hash = yaml
+        .as_hash()
+        .ok_or(ParseErr::new("expected each specialization to be a hash"))?;
+    if hash.len() != 1 {
+        return Err(Box::new(ParseErr::new("invalid specialize format")));
+    }
+    for (key, value) in hash {
+        let name = key.as_str().ok_or(ParseErr::new(
+            "expected res name of specialization to be a string",
+        ))?;
+        let res = monomorphise_from_yaml(value, gen_res_map)?;
+        return Ok((name.to_string(), res));
+    }
+    unreachable!()
+}
+
+fn monomorphise_from_yaml(
+    yaml: &Yaml,
+    gen_res_map: &HashMap<String, GenericResource>,
+) -> Result<Resource, Box<dyn Error>> {
+    let hash = yaml.as_hash().ok_or(ParseErr::new(
+        "expected specialization to be a hash internally",
+    ))?;
+    let res_name = hash
+        .get(&Yaml::from_str("res"))
+        .ok_or(ParseErr::new("expected res key in specialize"))?
+        .as_str()
+        .ok_or(ParseErr::new("expected res key to have string value"))?;
+    let gen_res = gen_res_map.get(res_name).ok_or(ParseErr(format!(
+        "resource {} not defined before",
+        res_name
+    )))?;
+    let type_list = hash
+        .get(&Yaml::from_str("type_map"))
+        .ok_or(ParseErr::new("expected type_map key in specialize"))?
+        .as_vec()
+        .ok_or(ParseErr::new("expected type_map key to be a list"))?;
+    let mut type_map = HashMap::new();
+    for yaml in type_list {
+        let type_hash = yaml.as_hash().ok_or(ParseErr::new(
+            "expected type_map to specify type subsitution as a hash",
+        ))?;
+        if type_hash.len() != 1 {
+            return Err(Box::new(ParseErr::new("type_map incorrectly specified")));
+        }
+        for (key, value) in type_hash {
+            let name = key
+                .as_str()
+                .ok_or(ParseErr::new("expected type-name to be a string"))?;
+            let type_param = TypeParam::new(name);
+            let resource = monomorphise_from_yaml(value, gen_res_map)?;
+            type_map.insert(type_param, resource);
+        }
+    }
+    match gen_res.monomorphise(type_map) {
+        Some(res) => Ok(res),
+        None => Err(Box::new(ParseErr(format!(
+            "failed to monomorphise {}",
+            res_name
+        )))),
+    }
 }
 
 #[derive(Debug)]

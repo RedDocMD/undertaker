@@ -1,19 +1,35 @@
 resources:
   - Arc:
-      id: "std::sync::Arc"
+      id: std::sync::Arc
       type_params:
         - T
   - Notify:
-      id: "tokio::sync::Notify"
+      id: tokio::sync::Notify
       type_params: []
   - Vec:
-      id: "std::vec::Vec"
+      id: std::vec::Vec
       type_params:
         - T
+  - HashMap:
+      id: std::collections::HashMap
+      type_params:
+        - K
+        - V
+  - oneshot_recv:
+      id: tokio::sync::oneshot::Reciever
+      type_params:
+        - T
+  - oneshot_send:
+      id: tokio::sync::oneshot::Sender
+      type_params:
+        - T
+  - String:
+      id: std::string::String
+      type_params: []
 
 callables:
   - map:
-      id: "crate::func::map"
+      id: crate::func::map
       type_params:
         - T
         - V
@@ -29,7 +45,7 @@ callables:
           type_params:
             - V
   - Arc_new:
-      id: "std::sync::Arc::create"
+      id: std::sync::Arc::create
       type_params:
         - T
       ctype: Function
@@ -42,7 +58,7 @@ callables:
           type_params:
             - T
   - Arc_clone:
-      id: "std::sync::Arc::clone"
+      id: std::sync::Arc::clone
       type_params:
         - T
       ctype: Function
@@ -58,7 +74,7 @@ callables:
             - T
 
   - Notify_new:
-      id: "tokio::sync::Notify::new"
+      id: tokio::sync::Notify::new
       type_params: []
       ctype: Function
       args: []
@@ -67,6 +83,34 @@ callables:
           name: Notify
           type_params: []
 
+  - Vec_new:
+      id: std::vec::Vec::new
+      type_params:
+        - T
+      ctype: Function
+      args: []
+      ret:
+        - cat: Res
+          name: Vec
+          type_params:
+            - T
+
+  - oneshot_channel:
+      id: tokio::sync::oneshot::channel
+      type_params:
+        - T
+      ctype: Function
+      args: []
+      ret:
+        - cat: Res
+          name: oneshot_send
+          type_params:
+            - T
+        - cat: Res
+          name: oneshot_recv
+          type_params:
+            - T
+
 creators:
   - Arc:
       - Arc_new
@@ -74,3 +118,29 @@ creators:
 
   - Notify:
       - Notify_new
+
+  - Vec:
+      - Vec_new
+
+  - oneshot_send:
+      - oneshot_channel
+
+  - oneshot_recv:
+      - oneshot_channel
+
+specialize:
+  - Arc<HashMap<Vec<usize>, String>>:
+      res: Arc
+      type_map:
+        - T:
+            res: HashMap
+            type_map:
+              - K:
+                  res: Vec
+                  type_map:
+                    - T:
+                        res: usize
+                        type_map: []
+              - V:
+                  res: String
+                  type_map: []
