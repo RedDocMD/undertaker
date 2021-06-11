@@ -151,3 +151,7 @@ specialize:
         - T:
             res: Notify
             type_map: []
+
+  - Notify:
+      res: Notify
+      type_map: []

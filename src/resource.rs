@@ -304,7 +304,7 @@ pub fn resource_creation_from_block(
                                     ident: ident.clone(),
                                     resource: resource.clone(),
                                 };
-                                ctxt.add_binding(ident.clone(), ob);
+                                // ctxt.add_binding(ident.clone(), ob);
                                 identifiers.push(ident);
                             }
                             Tuple(pat) => {
@@ -318,7 +318,7 @@ pub fn resource_creation_from_block(
                                             ident: ident.clone(),
                                             resource: resource.clone(),
                                         };
-                                        ctxt.add_binding(ident.clone(), ob);
+                                        // ctxt.add_binding(ident.clone(), ob);
                                         identifiers.push(ident);
                                     } else {
                                         unreachable!("Did not expect anything other than a literal pattern here");
@@ -413,9 +413,9 @@ pub fn resource_creation_from_expr<'res>(
                     _ => unimplemented!(),
                 };
                 if let Some(recv_ob) = ctxt.get_binding(&recv_name) {
-                    if recv_ob.resource == *resource {
-                        return Some(creator);
-                    }
+                    // if recv_ob.resource == *resource {
+                    //     return Some(creator);
+                    // }
                 }
             }
         }

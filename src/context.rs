@@ -3,7 +3,7 @@ use std::fmt;
 use std::fmt::Display;
 use std::fmt::Formatter;
 
-use crate::resource::Object;
+use crate::discover::Object;
 use crate::uses::{extend_path_once, UsePath};
 
 type BlockUsePaths = Vec<UsePath>;

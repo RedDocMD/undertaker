@@ -1,9 +1,11 @@
+use std::fmt::{self, Display, Formatter};
+
 use syn::{Block, Expr, Path, Stmt};
 
 use crate::{
     context::Context,
     resource::ResourceID,
-    types::{trim_common, Callable, CallableType},
+    types::{trim_common, Callable, CallableType, Resource, ResourceFile},
     uses::UsePathComponent,
 };
 
@@ -31,7 +33,7 @@ fn match_expr_path(res: &ResourceID, expr_path: &Path) -> bool {
         })
 }
 
-pub fn callable_from_expr(expr: &Expr, callable: &Callable, ctx: &Context) {
+pub fn callable_from_expr(expr: &Expr, callable: &Callable, ctx: &Context, info: &ResourceFile) {
     let trimmed_id = trim_id_by_ctxt(callable.id(), ctx);
     match expr {
         Expr::Call(expr) => {
@@ -41,8 +43,17 @@ pub fn callable_from_expr(expr: &Expr, callable: &Callable, ctx: &Context) {
             match expr.func.as_ref() {
                 Expr::Path(func) => {
                     if match_expr_path(&trimmed_id, &func.path) {
-                        println!("Found {}", format!("{}", callable).green());
-                        // Check args for types
+                        let mut args_and_types = expr.args.iter().zip(callable.args().iter());
+                        let args_valid = args_and_types.all(|(expr, res)| {
+                            if let Some(expr_res) = get_expr_type(expr, ctx, info) {
+                                &expr_res == res
+                            } else {
+                                false
+                            }
+                        });
+                        if args_valid {
+                            println!("Found {}", format!("{}", callable).green());
+                        }
                     }
                 }
                 _ => println!("ignored fn call"),
@@ -52,15 +63,74 @@ pub fn callable_from_expr(expr: &Expr, callable: &Callable, ctx: &Context) {
     }
 }
 
-pub fn callable_from_block(block: &Block, callable: &Callable, ctx: &Context) {
+pub fn callable_from_block(block: &Block, callable: &Callable, ctx: &Context, info: &ResourceFile) {
     for stmt in &block.stmts {
         match stmt {
             Stmt::Local(stmt) => {
                 if let Some((_, init)) = &stmt.init {
-                    callable_from_expr(init.as_ref(), callable, ctx);
+                    callable_from_expr(init.as_ref(), callable, ctx, info);
                 }
             }
             _ => println!("ignored stmt"),
         }
+    }
+}
+
+fn get_expr_type(expr: &Expr, ctx: &Context, info: &ResourceFile) -> Option<Resource> {
+    match expr {
+        Expr::Path(expr) => {
+            let segments: Vec<String> = expr
+                .path
+                .segments
+                .iter()
+                .map(|seg| seg.ident.to_string())
+                .collect();
+            if segments.len() == 1 {
+                let name = &segments[0];
+                if let Some(ob) = ctx.get_binding(name) {
+                    return Some(ob.res.clone());
+                }
+            }
+        }
+        Expr::Call(expr) => {
+            for (res, creator) in &info.spec_creators {
+                // TODO: Technically we should iterate over all functions!!
+                if creator.ctype() != CallableType::Function {
+                    return None;
+                }
+                let trimmed_id = trim_id_by_ctxt(res.id(), ctx);
+                match expr.func.as_ref() {
+                    Expr::Path(func) => {
+                        if match_expr_path(&trimmed_id, &func.path) {
+                            let mut args_and_types = expr.args.iter().zip(creator.args().iter());
+                            let args_valid = args_and_types.all(|(expr, res)| {
+                                if let Some(expr_res) = get_expr_type(expr, ctx, info) {
+                                    &expr_res == res
+                                } else {
+                                    false
+                                }
+                            });
+                            if args_valid {
+                                return Some(res.clone());
+                            }
+                        }
+                    }
+                    _ => {}
+                };
+            }
+        }
+        _ => {}
+    }
+    None
+}
+
+pub struct Object {
+    name: String,
+    res: Resource,
+}
+
+impl Display for Object {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}: {}", self.name, self.res)
     }
 }

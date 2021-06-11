@@ -95,6 +95,18 @@ impl Hash for GenericResource {
     }
 }
 
+impl PartialEq for Resource {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl Hash for Resource {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id.to_string().hash(state);
+    }
+}
+
 impl Monomorphisable<Resource> for GenericResource {
     fn monomorphise(&self, type_map: HashMap<TypeParam, Resource>) -> Option<Resource> {
         if type_map.len() != self.type_params.len() {
@@ -130,7 +142,7 @@ impl Display for GenericResource {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq)]
 pub struct Resource {
     id: ResourceID,
     type_map: HashMap<TypeParam, Resource>,
@@ -175,7 +187,7 @@ pub struct GenericCallable {
     ret: GenericReturn,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Callable {
     id: ResourceID,
     ctype: CallableType,
@@ -322,7 +334,7 @@ pub struct GenericReturn {
     rets: Vec<GenericArg>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Return {
     rets: Vec<Resource>,
 }
@@ -405,6 +417,7 @@ pub struct ResourceFile {
     pub gen_callables: HashMap<String, GenericCallable>,
     pub gen_creators: HashMap<String, Vec<String>>,
     pub specializations: HashMap<String, Resource>,
+    pub spec_creators: HashMap<Resource, Callable>,
 }
 
 pub fn parse_resource_file<T: AsRef<path::Path>>(
@@ -469,11 +482,27 @@ pub fn parse_resource_file<T: AsRef<path::Path>>(
         }
     }
 
+    let mut spec_creators = HashMap::new();
+
+    for (key, res) in &specializations {
+        let gen_res_name = if let Some(type_idx) = key.find("<") {
+            &key.as_str()[0..type_idx]
+        } else {
+            key.as_str()
+        };
+        for creator_name in &creators[gen_res_name] {
+            let gen_creator = &callables[creator_name];
+            let creator = gen_creator.monomorphise(res.type_map().clone()).unwrap();
+            spec_creators.insert(res.clone(), creator.clone());
+        }
+    }
+
     Ok(ResourceFile {
         gen_resources: resources,
         gen_callables: callables,
         gen_creators: creators,
         specializations,
+        spec_creators,
     })
 }
 

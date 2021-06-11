@@ -44,7 +44,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         let gen_creator = &info.gen_callables[creator_name];
                         let creator = gen_creator.monomorphise(res.type_map().clone()).unwrap();
 
-                        callable_from_block(func.block.as_ref(), &creator, &ctx);
+                        callable_from_block(func.block.as_ref(), &creator, &ctx, &info);
                     }
                 }
 
