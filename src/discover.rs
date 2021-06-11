@@ -1,4 +1,4 @@
-use syn::{Expr, Path};
+use syn::{Block, Expr, Path, Stmt};
 
 use crate::{
     context::Context,
@@ -6,6 +6,8 @@ use crate::{
     types::{trim_common, Callable, CallableType},
     uses::UsePathComponent,
 };
+
+use colored::*;
 
 fn trim_id_by_ctxt(id: &ResourceID, ctx: &Context) -> ResourceID {
     for path in ctx.iter() {
@@ -39,7 +41,7 @@ pub fn callable_from_expr(expr: &Expr, callable: &Callable, ctx: &Context) {
             match expr.func.as_ref() {
                 Expr::Path(func) => {
                     if match_expr_path(&trimmed_id, &func.path) {
-                        println!("Found {}", callable);
+                        println!("Found {}", format!("{}", callable).green());
                         // Check args for types
                     }
                 }
@@ -47,5 +49,18 @@ pub fn callable_from_expr(expr: &Expr, callable: &Callable, ctx: &Context) {
             }
         }
         _ => println!("ignored"),
+    }
+}
+
+pub fn callable_from_block(block: &Block, callable: &Callable, ctx: &Context) {
+    for stmt in &block.stmts {
+        match stmt {
+            Stmt::Local(stmt) => {
+                if let Some((_, init)) = &stmt.init {
+                    callable_from_expr(init.as_ref(), callable, ctx);
+                }
+            }
+            _ => println!("ignored stmt"),
+        }
     }
 }

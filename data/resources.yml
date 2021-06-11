@@ -45,7 +45,7 @@ callables:
           type_params:
             - V
   - Arc_new:
-      id: std::sync::Arc::create
+      id: std::sync::Arc::new
       type_params:
         - T
       ctype: Function

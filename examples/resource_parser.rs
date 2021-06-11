@@ -31,8 +31,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!();
     }
     println!("\n{}", "Resources:".yellow());
-    for res in &info.specializations {
-        println!("{}", res);
+    for (name, res) in &info.specializations {
+        println!("{} => {}", name, res);
     }
     Ok(())
 }

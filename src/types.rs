@@ -136,6 +136,16 @@ pub struct Resource {
     type_map: HashMap<TypeParam, Resource>,
 }
 
+impl Resource {
+    pub fn id(&self) -> &ResourceID {
+        &self.id
+    }
+
+    pub fn type_map(&self) -> &HashMap<TypeParam, Resource> {
+        &self.type_map
+    }
+}
+
 impl Display for Resource {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.id)?;
@@ -209,7 +219,7 @@ impl Display for GenericCallable {
             .map(|item| item.name.clone())
             .collect();
         let params_str = params.join(", ");
-        write!(f, "{}", self.id)?;
+        write!(f, "fn {}", self.id)?;
         if params.len() != 0 {
             write!(f, "<{}>", params_str)?;
         }
@@ -229,7 +239,7 @@ impl Display for Callable {
             })
             .collect();
         let args_str = args.join(", ");
-        write!(f, "({}) {}", args_str, self.ret)
+        write!(f, "fn {}({}) {}", self.id, args_str, self.ret)
     }
 }
 
@@ -394,7 +404,7 @@ pub struct ResourceFile {
     pub gen_resources: HashMap<String, GenericResource>,
     pub gen_callables: HashMap<String, GenericCallable>,
     pub gen_creators: HashMap<String, Vec<String>>,
-    pub specializations: Vec<Resource>,
+    pub specializations: HashMap<String, Resource>,
 }
 
 pub fn parse_resource_file<T: AsRef<path::Path>>(
@@ -447,15 +457,15 @@ pub fn parse_resource_file<T: AsRef<path::Path>>(
         }
     }
 
-    let mut specializations = Vec::new();
+    let mut specializations = HashMap::new();
 
     if let Some(specialize_yaml) = doc.get(&Yaml::from_str("specialize")) {
         let specialize_yaml = specialize_yaml
             .as_vec()
             .ok_or(ParseErr::new("expected specializartions to be an array"))?;
         for yaml in specialize_yaml {
-            let (_, res) = parse_specialization_from_yaml(yaml, &resources)?;
-            specializations.push(res);
+            let (name, res) = parse_specialization_from_yaml(yaml, &resources)?;
+            specializations.insert(name, res);
         }
     }
 
