@@ -11,7 +11,7 @@ use std::{
 use linked_hash_map::LinkedHashMap;
 use yaml_rust::{Yaml, YamlLoader};
 
-use crate::uses::{self, UsePath};
+use crate::uses::{self, UsePath, UsePathComponent};
 
 pub type ResourceID = UsePath;
 
@@ -173,6 +173,24 @@ pub struct Callable {
     ret: Return,
 }
 
+impl Callable {
+    pub fn id(&self) -> &ResourceID {
+        &self.id
+    }
+
+    pub fn ctype(&self) -> CallableType {
+        self.ctype
+    }
+
+    pub fn args(&self) -> &Vec<Resource> {
+        &self.args
+    }
+
+    pub fn ret(&self) -> &Return {
+        &self.ret
+    }
+}
+
 impl Display for GenericCallable {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let args: Vec<String> = self
@@ -195,6 +213,22 @@ impl Display for GenericCallable {
         if params.len() != 0 {
             write!(f, "<{}>", params_str)?;
         }
+        write!(f, "({}) {}", args_str, self.ret)
+    }
+}
+
+impl Display for Callable {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let args: Vec<String> = self
+            .args
+            .iter()
+            .map(|item| {
+                let mut output = String::new();
+                write!(&mut output, "{}", item).expect("failed to string");
+                output
+            })
+            .collect();
+        let args_str = args.join(", ");
         write!(f, "({}) {}", args_str, self.ret)
     }
 }
@@ -222,7 +256,7 @@ impl Monomorphisable<Callable> for GenericCallable {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CallableType {
     Function,
     Method,
@@ -281,6 +315,28 @@ pub struct GenericReturn {
 #[derive(Debug)]
 pub struct Return {
     rets: Vec<Resource>,
+}
+
+impl Display for Return {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let args: Vec<String> = self
+            .rets
+            .iter()
+            .map(|item| {
+                let mut output = String::new();
+                write!(&mut output, "{}", item).expect("failed to string");
+                output
+            })
+            .collect();
+        let args_str = args.join(", ");
+        if args.len() == 1 {
+            write!(f, "-> {}", args_str)
+        } else if args.len() > 1 {
+            write!(f, "-> ({})", args_str)
+        } else {
+            Ok(())
+        }
+    }
 }
 
 impl Display for GenericReturn {
@@ -716,4 +772,41 @@ impl ParseErr {
     fn new(s: &str) -> Self {
         Self(s.to_string())
     }
+}
+
+/// Attempts to remove `path` from `id` if `path` is an acceptable prefix of `id`.
+///
+/// Criterion for acceptability: Assume that path is used as a use path in a Rust module.
+/// If a function is directly a member of *that* module, and we attempt to use id, then
+/// path is acceptable if it **shortens** the length of id that is required to be used.
+///
+/// *Example*: If we want to invoke `tokio::sync::oneshot::channel` (this is `id`), then
+/// all the acceptable paths are: `tokio`, `tokio::*`, `tokio::sync`, `tokio::sync::*`,
+/// `tokio::sync::oneshot`, `tokio::sync::oneshot::*`, `tokio::sync::oneshot::channel`.
+pub fn trim_common(id: &ResourceID, path: &UsePath) -> Option<ResourceID> {
+    let path_comps = path.components();
+    let id_comps = id.components();
+    if let Some(new_comps) = id_comps.strip_prefix(&path_comps[0..path_comps.len() - 1]) {
+        let path_comps_last = path_comps.last().unwrap();
+        match path_comps_last {
+            &UsePathComponent::Glob => return Some(UsePath::from(&new_comps.to_vec())),
+            &UsePathComponent::Name(_) => {
+                if id_comps.starts_with(&path_comps) {
+                    return Some(UsePath::from(&new_comps.to_vec()));
+                }
+            }
+            UsePathComponent::Alias(alias) => {
+                let (from, to) = alias.to_pair();
+                let new_first = new_comps.first().unwrap();
+                if let UsePathComponent::Name(name) = new_first {
+                    if name == from {
+                        let mut new_comps = new_comps.to_vec().clone();
+                        new_comps[0] = UsePathComponent::Name(to.to_string());
+                        return Some(UsePath::from(&new_comps));
+                    }
+                }
+            }
+        };
+    }
+    None
 }
