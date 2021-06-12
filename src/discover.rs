@@ -5,7 +5,7 @@ use syn::{Block, Expr, Path, Stmt};
 use crate::{
     context::Context,
     resource::ResourceID,
-    types::{trim_common, Callable, CallableType, Resource, ResourceFile},
+    types::{trim_common, Callable, CallableType, Resource, ResourceFile, Return},
     uses::UsePathComponent,
 };
 
@@ -46,12 +46,10 @@ pub fn callable_from_expr(expr: &Expr, callable: &Callable, ctx: &Context, info:
                         let mut args_and_types = expr.args.iter().zip(callable.args().iter());
                         let args_valid = args_and_types.all(|(expr, res)| {
                             if let Some(expr_res) = get_expr_type(expr, ctx, info) {
-                                // TODO: Fix this hack
-                                if let Some(first) = expr_res.first() {
-                                    return first == res;
-                                }
+                                &expr_res == res
+                            } else {
+                                false
                             }
-                            false
                         });
                         if args_valid {
                             println!("Found {}", format!("{}", callable).green());
@@ -78,7 +76,7 @@ pub fn callable_from_block(block: &Block, callable: &Callable, ctx: &Context, in
     }
 }
 
-fn get_expr_type(expr: &Expr, ctx: &Context, info: &ResourceFile) -> Option<Vec<Resource>> {
+fn get_expr_type(expr: &Expr, ctx: &Context, info: &ResourceFile) -> Option<Return> {
     match expr {
         Expr::Path(expr) => {
             let segments: Vec<String> = expr
@@ -90,7 +88,7 @@ fn get_expr_type(expr: &Expr, ctx: &Context, info: &ResourceFile) -> Option<Vec<
             if segments.len() == 1 {
                 let name = &segments[0];
                 if let Some(ob) = ctx.get_binding(name) {
-                    return Some(vec![ob.res.clone()]);
+                    return Some(Return::Res(ob.res.clone()));
                 }
             }
         }
@@ -106,15 +104,13 @@ fn get_expr_type(expr: &Expr, ctx: &Context, info: &ResourceFile) -> Option<Vec<
                             let mut args_and_types = expr.args.iter().zip(callable.args().iter());
                             let args_valid = args_and_types.all(|(expr, res)| {
                                 if let Some(expr_res) = get_expr_type(expr, ctx, info) {
-                                    // TODO: Fix this hack
-                                    if let Some(first) = expr_res.first() {
-                                        return first == res;
-                                    }
+                                    &expr_res == res
+                                } else {
+                                    false
                                 }
-                                false
                             });
                             if args_valid {
-                                return Some(callable.ret().rets().clone());
+                                return Some(callable.ret().clone());
                             }
                         }
                     }

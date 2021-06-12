@@ -102,14 +102,16 @@ callables:
       ctype: Function
       args: []
       ret:
-        - cat: Res
-          name: oneshot_send
-          type_params:
-            - T
-        - cat: Res
-          name: oneshot_recv
-          type_params:
-            - T
+        - cat: Tuple
+          members:
+            - cat: Res
+              name: oneshot_send
+              type_params:
+                - T
+            - cat: Res
+              name: oneshot_recv
+              type_params:
+                - T
 
 creators:
   - Arc:

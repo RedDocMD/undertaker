@@ -191,7 +191,7 @@ pub struct GenericCallable {
 pub struct Callable {
     id: ResourceID,
     ctype: CallableType,
-    args: Vec<Resource>,
+    args: Vec<Arg>,
     ret: Return,
 }
 
@@ -204,7 +204,7 @@ impl Callable {
         self.ctype
     }
 
-    pub fn args(&self) -> &Vec<Resource> {
+    pub fn args(&self) -> &Vec<Arg> {
         &self.args
     }
 
@@ -235,7 +235,7 @@ impl Display for GenericCallable {
         if params.len() != 0 {
             write!(f, "<{}>", params_str)?;
         }
-        write!(f, "({}) {}", args_str, self.ret)
+        write!(f, "({}) -> {}", args_str, self.ret)
     }
 }
 
@@ -305,10 +305,17 @@ impl Display for CallableType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum GenericArg {
     Type(TypeParam),
     Res(GenericResource),
+    Tuple(Vec<GenericArg>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Arg {
+    Res(Resource),
+    Tuple(Vec<Arg>),
 }
 
 impl Display for GenericArg {
@@ -316,92 +323,67 @@ impl Display for GenericArg {
         match self {
             Self::Type(param) => write!(f, "{}", param.name),
             Self::Res(res) => write!(f, "{}", res),
-        }
-    }
-}
-
-impl Monomorphisable<Resource> for GenericArg {
-    fn monomorphise(&self, type_map: HashMap<TypeParam, Resource>) -> Option<Resource> {
-        match self {
-            Self::Type(type_param) => type_map.get(type_param).cloned(),
-            Self::Res(gen_res) => gen_res.monomorphise(type_map),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct GenericReturn {
-    rets: Vec<GenericArg>,
-}
-
-#[derive(Debug, Clone)]
-pub struct Return {
-    rets: Vec<Resource>,
-}
-
-impl Return {
-    pub fn rets(&self) -> &Vec<Resource> {
-        &self.rets
-    }
-}
-
-impl Display for Return {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let args: Vec<String> = self
-            .rets
-            .iter()
-            .map(|item| {
-                let mut output = String::new();
-                write!(&mut output, "{}", item).expect("failed to string");
-                output
-            })
-            .collect();
-        let args_str = args.join(", ");
-        if args.len() == 1 {
-            write!(f, "-> {}", args_str)
-        } else if args.len() > 1 {
-            write!(f, "-> ({})", args_str)
-        } else {
-            Ok(())
-        }
-    }
-}
-
-impl Display for GenericReturn {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let args: Vec<String> = self
-            .rets
-            .iter()
-            .map(|item| {
-                let mut output = String::new();
-                write!(&mut output, "{}", item).expect("failed to string");
-                output
-            })
-            .collect();
-        let args_str = args.join(", ");
-        if args.len() == 1 {
-            write!(f, "-> {}", args_str)
-        } else if args.len() > 1 {
-            write!(f, "-> ({})", args_str)
-        } else {
-            Ok(())
-        }
-    }
-}
-
-impl Monomorphisable<Return> for GenericReturn {
-    fn monomorphise(&self, type_map: HashMap<TypeParam, Resource>) -> Option<Return> {
-        let mut rets = Vec::new();
-        for gen_ret in &self.rets {
-            if let Some(ret) = gen_ret.monomorphise(type_map.clone()) {
-                rets.push(ret);
-            } else {
-                return None;
+            Self::Tuple(tuple) => {
+                let arg_strs: Vec<String> = tuple
+                    .iter()
+                    .map(|arg| {
+                        let mut s = String::new();
+                        write!(&mut s, "{}", arg).expect("Expected to be able to write to string");
+                        s
+                    })
+                    .collect();
+                write!(f, "({})", arg_strs.join(", "))
             }
         }
-        Some(Return { rets })
     }
 }
+
+impl Display for Arg {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Res(res) => write!(f, "{}", res),
+            Self::Tuple(tuple) => {
+                let arg_strs: Vec<String> = tuple
+                    .iter()
+                    .map(|arg| {
+                        let mut s = String::new();
+                        write!(&mut s, "{}", arg).expect("Expected to be able to write to string");
+                        s
+                    })
+                    .collect();
+                write!(f, "({})", arg_strs.join(", "))
+            }
+        }
+    }
+}
+
+impl Monomorphisable<Arg> for GenericArg {
+    fn monomorphise(&self, type_map: HashMap<TypeParam, Resource>) -> Option<Arg> {
+        match self {
+            Self::Type(type_param) => type_map
+                .get(type_param)
+                .cloned()
+                .and_then(|res| Some(Arg::Res(res))),
+            Self::Res(gen_res) => gen_res
+                .monomorphise(type_map)
+                .and_then(|res| Some(Arg::Res(res))),
+            Self::Tuple(tuple) => {
+                let args = tuple.iter().map(|arg| arg.monomorphise(type_map.clone()));
+                let valid = args.clone().all(|item| item.is_some());
+                if valid {
+                    let args: Vec<Arg> = args.map(|item| item.unwrap()).collect();
+                    Some(Arg::Tuple(args))
+                } else {
+                    None
+                }
+            }
+        }
+    }
+}
+
+pub type GenericReturn = GenericArg;
+
+pub type Return = Arg;
 
 fn primitive_types_as_resources() -> HashMap<String, GenericResource> {
     let types = vec![
@@ -471,9 +453,10 @@ fn generate_creators_of_resource(
 ) {
     if let Some(spec_gen_creators) = gen_creators.get(&resource.id) {
         for gen_creator_id in spec_gen_creators {
-            let gen_creator = &gen_callables[gen_creator_id];
-            if let Some(creator) = gen_creator.monomorphise(resource.type_map.clone()) {
-                callables.push(creator);
+            if let Some(gen_creator) = gen_callables.get(gen_creator_id) {
+                if let Some(creator) = gen_creator.monomorphise(resource.type_map.clone()) {
+                    callables.push(creator);
+                }
             }
         }
         for (_, res) in &resource.type_map {
@@ -676,6 +659,14 @@ fn parse_callable_from_yaml(
                     ))));
                 }
                 args.push(GenericArg::Type(type_param));
+            } else if cat == "Tuple" {
+                let members_list = arg_hash
+                    .get(&Yaml::from_str("members"))
+                    .ok_or(ParseErr::new("tuple type must have members"))?
+                    .as_vec()
+                    .ok_or(ParseErr::new("expected members to be a list"))?;
+                let sub_args = arg_vec_from_yaml(members_list, resources_map, type_params)?;
+                args.push(GenericArg::Tuple(sub_args));
             } else {
                 return Err(Box::new(ParseErr(format!(
                     "{} isn't a valid type of arg",
@@ -732,9 +723,13 @@ fn parse_callable_from_yaml(
         let ctype = CallableType::from_str(ctype_str)
             .ok_or(ParseErr(format!("invalid ctype: {}", ctype_str)))?;
         let args = arg_vec_from_yaml(args_vec, resources_map, &type_params)?;
-        let ret = GenericReturn {
-            rets: arg_vec_from_yaml(ret_vec, resources_map, &type_params)?,
-        };
+        let ret_vec = arg_vec_from_yaml(ret_vec, resources_map, &type_params)?;
+        if ret_vec.len() != 1 {
+            return Err(Box::new(ParseErr::new(
+                "expected return to be a single arg",
+            )));
+        }
+        let ret = ret_vec.into_iter().next().unwrap();
 
         let callable = GenericCallable {
             id,
