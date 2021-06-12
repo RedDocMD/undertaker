@@ -46,10 +46,12 @@ pub fn callable_from_expr(expr: &Expr, callable: &Callable, ctx: &Context, info:
                         let mut args_and_types = expr.args.iter().zip(callable.args().iter());
                         let args_valid = args_and_types.all(|(expr, res)| {
                             if let Some(expr_res) = get_expr_type(expr, ctx, info) {
-                                &expr_res == res
-                            } else {
-                                false
+                                // TODO: Fix this hack
+                                if let Some(first) = expr_res.first() {
+                                    return first == res;
+                                }
                             }
+                            false
                         });
                         if args_valid {
                             println!("Found {}", format!("{}", callable).green());
@@ -76,7 +78,7 @@ pub fn callable_from_block(block: &Block, callable: &Callable, ctx: &Context, in
     }
 }
 
-fn get_expr_type(expr: &Expr, ctx: &Context, info: &ResourceFile) -> Option<Resource> {
+fn get_expr_type(expr: &Expr, ctx: &Context, info: &ResourceFile) -> Option<Vec<Resource>> {
     match expr {
         Expr::Path(expr) => {
             let segments: Vec<String> = expr
@@ -88,35 +90,36 @@ fn get_expr_type(expr: &Expr, ctx: &Context, info: &ResourceFile) -> Option<Reso
             if segments.len() == 1 {
                 let name = &segments[0];
                 if let Some(ob) = ctx.get_binding(name) {
-                    return Some(ob.res.clone());
+                    return Some(vec![ob.res.clone()]);
                 }
             }
         }
         Expr::Call(expr) => {
-            for (res, creator) in &info.spec_creators {
-                // TODO: Technically we should iterate over all functions!!
-                if creator.ctype() != CallableType::Function {
+            for callable in info.callables() {
+                if callable.ctype() != CallableType::Function {
                     return None;
                 }
-                let trimmed_id = trim_id_by_ctxt(res.id(), ctx);
+                let trimmed_id = trim_id_by_ctxt(callable.id(), ctx);
                 match expr.func.as_ref() {
                     Expr::Path(func) => {
                         if match_expr_path(&trimmed_id, &func.path) {
-                            let mut args_and_types = expr.args.iter().zip(creator.args().iter());
+                            let mut args_and_types = expr.args.iter().zip(callable.args().iter());
                             let args_valid = args_and_types.all(|(expr, res)| {
                                 if let Some(expr_res) = get_expr_type(expr, ctx, info) {
-                                    &expr_res == res
-                                } else {
-                                    false
+                                    // TODO: Fix this hack
+                                    if let Some(first) = expr_res.first() {
+                                        return first == res;
+                                    }
                                 }
+                                false
                             });
                             if args_valid {
-                                return Some(res.clone());
+                                return Some(callable.ret().rets().clone());
                             }
                         }
                     }
                     _ => {}
-                };
+                }
             }
         }
         _ => {}

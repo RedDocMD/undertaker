@@ -10,19 +10,19 @@ fn main() -> Result<(), Box<dyn Error>> {
         .expect("First arg must be filename");
     let info = parse_resource_file(filename)?;
     println!("{}", "Generic Resources:".yellow());
-    for (name, gen_res) in &info.gen_resources {
+    for (name, gen_res) in info.gen_resources() {
         println!("{} => {}", name, gen_res);
     }
     println!("\n{}", "Generic Callables:".yellow());
-    for (name, gen_call) in &info.gen_callables {
+    for (name, gen_call) in info.gen_callables() {
         println!("{} => {}", name, gen_call);
     }
     println!("\n{}", "Generic Creators:".yellow());
-    for (res, creators) in &info.gen_creators {
-        let res = &info.gen_resources[res];
+    for (res, creators) in info.gen_creators() {
+        let res = &info.gen_resources()[res];
         print!("{} => ", res);
         for (idx, creator) in creators.iter().enumerate() {
-            let creator = &info.gen_callables[creator];
+            let creator = &info.gen_callables()[creator];
             print!("{}", creator);
             if idx != creators.len() - 1 {
                 print!(", ");
@@ -31,7 +31,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!();
     }
     println!("\n{}", "Resources:".yellow());
-    for (name, res) in &info.specializations {
+    for (name, res) in info.specializations() {
         println!("{} => {}", name, res);
     }
     Ok(())

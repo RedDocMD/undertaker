@@ -34,16 +34,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let block_uses = uses::extract_block_uses(func.block.as_ref());
                 ctx.add_use_paths(block_uses);
 
-                for (key, res) in &info.specializations {
-                    let gen_res_name = if let Some(type_idx) = key.find("<") {
-                        &key.as_str()[0..type_idx]
-                    } else {
-                        key.as_str()
-                    };
-                    for creator_name in &info.gen_creators[gen_res_name] {
-                        let gen_creator = &info.gen_callables[creator_name];
+                for (_, res) in info.specializations() {
+                    let gen_creators_map = info.gen_creators();
+                    let creator_ids = &gen_creators_map[res.id()];
+                    let gen_callables = info.gen_callables();
+                    for creator_id in creator_ids {
+                        let gen_creator = &gen_callables[creator_id];
                         let creator = gen_creator.monomorphise(res.type_map().clone()).unwrap();
-
                         callable_from_block(func.block.as_ref(), &creator, &ctx, &info);
                     }
                 }

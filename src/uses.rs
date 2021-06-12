@@ -1,4 +1,7 @@
-use std::fmt::{Display, Formatter, Result as FmtResult};
+use std::{
+    fmt::{Display, Formatter, Result as FmtResult},
+    hash::{Hash, Hasher},
+};
 
 use syn::{Block, File, Item, Stmt, UseTree};
 
@@ -31,6 +34,12 @@ impl Display for UsePath {
 impl UsePath {
     pub fn components(&self) -> &Vec<UsePathComponent> {
         &self.components
+    }
+}
+
+impl Hash for UsePath {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.to_string().hash(state);
     }
 }
 

@@ -339,6 +339,12 @@ pub struct Return {
     rets: Vec<Resource>,
 }
 
+impl Return {
+    pub fn rets(&self) -> &Vec<Resource> {
+        &self.rets
+    }
+}
+
 impl Display for Return {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let args: Vec<String> = self
@@ -413,11 +419,67 @@ fn primitive_types_as_resources() -> HashMap<String, GenericResource> {
 }
 
 pub struct ResourceFile {
-    pub gen_resources: HashMap<String, GenericResource>,
-    pub gen_callables: HashMap<String, GenericCallable>,
-    pub gen_creators: HashMap<String, Vec<String>>,
-    pub specializations: HashMap<String, Resource>,
-    pub spec_creators: HashMap<Resource, Callable>,
+    gen_resources: HashMap<ResourceID, GenericResource>,
+    gen_callables: HashMap<ResourceID, GenericCallable>,
+    gen_creators: HashMap<ResourceID, Vec<ResourceID>>,
+    specializations: HashMap<String, Resource>,
+    callables: Vec<Callable>,
+}
+
+impl ResourceFile {
+    fn create_callables(&mut self) {
+        self.specialize_creators();
+    }
+
+    fn specialize_creators(&mut self) {
+        for (_, spec) in &self.specializations {
+            generate_creators_of_resource(
+                spec,
+                &self.gen_creators,
+                &self.gen_callables,
+                &mut self.callables,
+            );
+        }
+    }
+
+    pub fn callables(&self) -> &Vec<Callable> {
+        &self.callables
+    }
+
+    pub fn specializations(&self) -> &HashMap<String, Resource> {
+        &self.specializations
+    }
+
+    pub fn gen_creators(&self) -> &HashMap<ResourceID, Vec<ResourceID>> {
+        &self.gen_creators
+    }
+
+    pub fn gen_callables(&self) -> &HashMap<ResourceID, GenericCallable> {
+        &self.gen_callables
+    }
+
+    pub fn gen_resources(&self) -> &HashMap<ResourceID, GenericResource> {
+        &self.gen_resources
+    }
+}
+
+fn generate_creators_of_resource(
+    resource: &Resource,
+    gen_creators: &HashMap<ResourceID, Vec<ResourceID>>,
+    gen_callables: &HashMap<ResourceID, GenericCallable>,
+    callables: &mut Vec<Callable>,
+) {
+    if let Some(spec_gen_creators) = gen_creators.get(&resource.id) {
+        for gen_creator_id in spec_gen_creators {
+            let gen_creator = &gen_callables[gen_creator_id];
+            if let Some(creator) = gen_creator.monomorphise(resource.type_map.clone()) {
+                callables.push(creator);
+            }
+        }
+        for (_, res) in &resource.type_map {
+            generate_creators_of_resource(res, gen_creators, gen_callables, callables);
+        }
+    }
 }
 
 pub fn parse_resource_file<T: AsRef<path::Path>>(
@@ -482,28 +544,26 @@ pub fn parse_resource_file<T: AsRef<path::Path>>(
         }
     }
 
-    let mut spec_creators = HashMap::new();
-
-    for (key, res) in &specializations {
-        let gen_res_name = if let Some(type_idx) = key.find("<") {
-            &key.as_str()[0..type_idx]
-        } else {
-            key.as_str()
-        };
-        for creator_name in &creators[gen_res_name] {
-            let gen_creator = &callables[creator_name];
-            let creator = gen_creator.monomorphise(res.type_map().clone()).unwrap();
-            spec_creators.insert(res.clone(), creator.clone());
-        }
+    let mut gen_resources = HashMap::new();
+    for (_, res) in resources {
+        gen_resources.insert(res.id.clone(), res);
     }
 
-    Ok(ResourceFile {
-        gen_resources: resources,
-        gen_callables: callables,
+    let mut gen_callables = HashMap::new();
+    for (_, call) in callables {
+        gen_callables.insert(call.id.clone(), call);
+    }
+
+    let mut info = ResourceFile {
+        gen_resources,
+        gen_callables,
         gen_creators: creators,
         specializations,
-        spec_creators,
-    })
+        callables: Vec::new(),
+    };
+    info.create_callables();
+
+    Ok(info)
 }
 
 fn parse_resource_from_yaml(yaml: &Yaml) -> Result<(String, GenericResource), Box<dyn Error>> {
@@ -692,7 +752,7 @@ fn parse_creator_from_yaml(
     yaml: &Yaml,
     res_map: &HashMap<String, GenericResource>,
     call_map: &HashMap<String, GenericCallable>,
-) -> Result<(String, Vec<String>), Box<dyn Error>> {
+) -> Result<(ResourceID, Vec<ResourceID>), Box<dyn Error>> {
     let hash = yaml
         .as_hash()
         .ok_or(ParseErr::new("expected each creator to be a hash"))?;
@@ -709,22 +769,23 @@ fn parse_creator_from_yaml(
                 name
             ))));
         }
+        let res_id = res_map[name].id.clone();
 
         let creators_vec = value
             .as_vec()
             .ok_or(ParseErr::new("expected creator names to be a list"))?;
-        let creators: Vec<String> = creators_vec
+        let creator_ids: Vec<ResourceID> = creators_vec
             .iter()
             .map(|item| {
                 let call_name = item.as_str().expect("expected creator name to be a string");
                 if !call_map.contains_key(call_name) {
                     panic!("{} is not defined as a callable", call_name);
                 }
-                call_name.to_string()
+                call_map[call_name].id.clone()
             })
             .collect();
 
-        return Ok((name.to_string(), creators));
+        return Ok((res_id, creator_ids));
     }
     unreachable!()
 }
