@@ -4,7 +4,7 @@ use colored::*;
 use syn::Item;
 use undertaker::{
     context::Context,
-    discover::callable_from_block,
+    discover::creator_from_block,
     types::{parse_resource_file, Monomorphisable},
     uses,
 };
@@ -41,7 +41,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     for creator_id in creator_ids {
                         let gen_creator = &gen_callables[creator_id];
                         let creator = gen_creator.monomorphise(res.type_map().clone()).unwrap();
-                        callable_from_block(func.block.as_ref(), &creator, &ctx, &info);
+                        creator_from_block(func.block.as_ref(), &creator, &res, &mut ctx, &info);
                     }
                 }
 

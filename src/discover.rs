@@ -1,11 +1,11 @@
 use std::fmt::{self, Display, Formatter};
 
-use syn::{Block, Expr, Path, Stmt};
+use syn::{Block, Expr, Pat, Path, Stmt};
 
 use crate::{
     context::Context,
     resource::ResourceID,
-    types::{trim_common, Callable, CallableType, Resource, ResourceFile, Return},
+    types::{trim_common, Arg, Callable, CallableType, Resource, ResourceFile, Return},
     uses::UsePathComponent,
 };
 
@@ -33,12 +33,17 @@ fn match_expr_path(res: &ResourceID, expr_path: &Path) -> bool {
         })
 }
 
-pub fn callable_from_expr(expr: &Expr, callable: &Callable, ctx: &Context, info: &ResourceFile) {
+pub fn callable_from_expr(
+    expr: &Expr,
+    callable: &Callable,
+    ctx: &Context,
+    info: &ResourceFile,
+) -> bool {
     let trimmed_id = trim_id_by_ctxt(callable.id(), ctx);
     match expr {
         Expr::Call(expr) => {
             if callable.ctype() != CallableType::Function {
-                return;
+                return false;
             }
             match expr.func.as_ref() {
                 Expr::Path(func) => {
@@ -53,6 +58,7 @@ pub fn callable_from_expr(expr: &Expr, callable: &Callable, ctx: &Context, info:
                         });
                         if args_valid {
                             println!("Found {}", format!("{}", callable).green());
+                            return true;
                         }
                     }
                 }
@@ -61,19 +67,68 @@ pub fn callable_from_expr(expr: &Expr, callable: &Callable, ctx: &Context, info:
         }
         _ => println!("ignored"),
     }
+    false
 }
 
-pub fn callable_from_block(block: &Block, callable: &Callable, ctx: &Context, info: &ResourceFile) {
+pub fn creator_from_block(
+    block: &Block,
+    creator: &Callable,
+    resource: &Resource,
+    ctx: &mut Context,
+    info: &ResourceFile,
+) {
     for stmt in &block.stmts {
         match stmt {
             Stmt::Local(stmt) => {
                 if let Some((_, init)) = &stmt.init {
-                    callable_from_expr(init.as_ref(), callable, ctx, info);
+                    if callable_from_expr(init.as_ref(), creator, ctx, info) {
+                        let ret = creator.ret();
+                        let pat = &stmt.pat;
+                        let name = match_arg_to_pat(resource, ret, pat).unwrap();
+                        let ob = Object::new(name, resource.clone());
+                        ctx.add_binding(ob.name.clone(), ob);
+                    }
                 }
             }
             _ => println!("ignored stmt"),
         }
     }
+}
+
+fn match_arg_to_pat(res: &Resource, arg: &Arg, pat: &Pat) -> Option<String> {
+    match arg {
+        Arg::Res(arg_res) => {
+            if arg_res != res {
+                return None;
+            }
+            match pat {
+                Pat::Ident(pat) => Some(pat.ident.to_string()),
+                Pat::Path(pat) => Some(path_to_string(&pat.path)),
+                Pat::Type(pat) => match_arg_to_pat(res, arg, pat.pat.as_ref()),
+                _ => None,
+            }
+        }
+        Arg::Tuple(arg_vec) => {
+            if let Pat::Tuple(pat) = &pat {
+                for (idx, pat) in pat.elems.iter().enumerate() {
+                    let s = match_arg_to_pat(res, &arg_vec[idx], pat);
+                    if s.is_some() {
+                        return s;
+                    }
+                }
+            }
+            None
+        }
+    }
+}
+
+fn path_to_string(path: &Path) -> String {
+    let comp_strs: Vec<String> = path
+        .segments
+        .iter()
+        .map(|item| item.ident.to_string())
+        .collect();
+    comp_strs.join("::")
 }
 
 fn get_expr_type(expr: &Expr, ctx: &Context, info: &ResourceFile) -> Option<Return> {
@@ -126,6 +181,12 @@ fn get_expr_type(expr: &Expr, ctx: &Context, info: &ResourceFile) -> Option<Retu
 pub struct Object {
     name: String,
     res: Resource,
+}
+
+impl Object {
+    fn new(name: String, res: Resource) -> Self {
+        Self { name, res }
+    }
 }
 
 impl Display for Object {
