@@ -34,7 +34,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let block_uses = uses::extract_block_uses(func.block.as_ref());
                 ctx.add_use_paths(block_uses);
 
-                for _ in 1..=2 {
+                let mut binding_cnt = 0;
+                loop {
                     for (_, res) in info.specializations() {
                         let gen_creators_map = info.gen_creators();
                         let creator_ids = &gen_creators_map[res.id()];
@@ -50,6 +51,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 &info,
                             );
                         }
+                    }
+                    let new_binding_cnt = ctx.tot_binding_cnt();
+                    if new_binding_cnt == binding_cnt {
+                        break;
+                    } else {
+                        binding_cnt = new_binding_cnt;
                     }
                 }
                 println!("\n{}:\n{}", "Context".yellow(), ctx);

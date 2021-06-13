@@ -95,6 +95,10 @@ impl Context {
     pub fn get_binding(&self, id: &String) -> Option<&Object> {
         self.env.get_binding(id)
     }
+
+    pub fn tot_binding_cnt(&self) -> usize {
+        self.env.tot_binding_cnt()
+    }
 }
 
 impl Display for Context {
@@ -197,6 +201,12 @@ impl Environment {
             }
         }
         None
+    }
+
+    fn tot_binding_cnt(&self) -> usize {
+        self.block_envs
+            .iter()
+            .fold(0, |acc, el| acc + el.id_map.keys().len())
     }
 }
 
