@@ -34,17 +34,24 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let block_uses = uses::extract_block_uses(func.block.as_ref());
                 ctx.add_use_paths(block_uses);
 
-                for (_, res) in info.specializations() {
-                    let gen_creators_map = info.gen_creators();
-                    let creator_ids = &gen_creators_map[res.id()];
-                    let gen_callables = info.gen_callables();
-                    for creator_id in creator_ids {
-                        let gen_creator = &gen_callables[creator_id];
-                        let creator = gen_creator.monomorphise(res.type_map().clone()).unwrap();
-                        creator_from_block(func.block.as_ref(), &creator, &res, &mut ctx, &info);
+                for _ in 1..=2 {
+                    for (_, res) in info.specializations() {
+                        let gen_creators_map = info.gen_creators();
+                        let creator_ids = &gen_creators_map[res.id()];
+                        let gen_callables = info.gen_callables();
+                        for creator_id in creator_ids {
+                            let gen_creator = &gen_callables[creator_id];
+                            let creator = gen_creator.monomorphise(res.type_map().clone()).unwrap();
+                            creator_from_block(
+                                func.block.as_ref(),
+                                &creator,
+                                &res,
+                                &mut ctx,
+                                &info,
+                            );
+                        }
                     }
                 }
-
                 println!("\n{}:\n{}", "Context".yellow(), ctx);
                 ctx.exit_block();
                 break;

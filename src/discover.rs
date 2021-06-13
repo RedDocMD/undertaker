@@ -6,7 +6,7 @@ use crate::{
     context::Context,
     resource::ResourceID,
     types::{trim_common, Arg, Callable, CallableType, Resource, ResourceFile, Return},
-    uses::UsePathComponent,
+    uses::{UsePath, UsePathComponent},
 };
 
 use colored::*;
@@ -63,6 +63,37 @@ pub fn callable_from_expr(
                     }
                 }
                 _ => println!("ignored fn call"),
+            }
+        }
+        Expr::MethodCall(expr) => {
+            if callable.ctype() != CallableType::Method {
+                return false;
+            }
+            let cid = callable.id();
+            let cid_parts = cid.components();
+            let base_res_id = UsePath::from(&cid_parts[0..cid_parts.len() - 1].to_vec());
+            if let UsePathComponent::Name(method_name) = cid_parts.last().unwrap() {
+                if method_name == &expr.method.to_string() {
+                    if let Some(reciever_type) = get_expr_type(expr.receiver.as_ref(), ctx, info) {
+                        if let Arg::Res(reciever_res) = reciever_type {
+                            if reciever_res.id() == &base_res_id {
+                                let mut args_and_types =
+                                    expr.args.iter().zip(callable.args().iter());
+                                let args_valid = args_and_types.all(|(expr, res)| {
+                                    if let Some(expr_res) = get_expr_type(expr, ctx, info) {
+                                        &expr_res == res
+                                    } else {
+                                        false
+                                    }
+                                });
+                                if args_valid {
+                                    println!("Found {}", format!("{}", callable).green());
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
         _ => println!("ignored"),
@@ -147,6 +178,9 @@ fn get_expr_type(expr: &Expr, ctx: &Context, info: &ResourceFile) -> Option<Retu
                 }
             }
         }
+        Expr::Reference(expr) => {
+            return get_expr_type(expr.expr.as_ref(), ctx, info);
+        }
         Expr::Call(expr) => {
             for callable in info.callables() {
                 if callable.ctype() != CallableType::Function {
@@ -170,6 +204,40 @@ fn get_expr_type(expr: &Expr, ctx: &Context, info: &ResourceFile) -> Option<Retu
                         }
                     }
                     _ => {}
+                }
+            }
+        }
+        Expr::MethodCall(expr) => {
+            for callable in info.callables() {
+                if callable.ctype() != CallableType::Method {
+                    return None;
+                }
+                let cid = callable.id();
+                let cid_parts = cid.components();
+                let base_res_id = UsePath::from(&cid_parts[0..cid_parts.len() - 1].to_vec());
+                if let UsePathComponent::Name(method_name) = cid_parts.last().unwrap() {
+                    if method_name == &expr.method.to_string() {
+                        if let Some(reciever_type) =
+                            get_expr_type(expr.receiver.as_ref(), ctx, info)
+                        {
+                            if let Arg::Res(reciever_res) = reciever_type {
+                                if reciever_res.id() == &base_res_id {
+                                    let mut args_and_types =
+                                        expr.args.iter().zip(callable.args().iter());
+                                    let args_valid = args_and_types.all(|(expr, res)| {
+                                        if let Some(expr_res) = get_expr_type(expr, ctx, info) {
+                                            &expr_res == res
+                                        } else {
+                                            false
+                                        }
+                                    });
+                                    if args_valid {
+                                        return Some(callable.ret().clone());
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

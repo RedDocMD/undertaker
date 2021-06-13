@@ -97,7 +97,7 @@ impl Hash for GenericResource {
 
 impl PartialEq for Resource {
     fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
+        self.id == other.id && self.type_map == other.type_map
     }
 }
 
