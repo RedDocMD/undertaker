@@ -4,6 +4,7 @@ use std::fmt::Display;
 use std::fmt::Formatter;
 
 use crate::discover::Object;
+use crate::path;
 use crate::uses::{extend_path_once, UsePath};
 
 type BlockUsePaths = Vec<UsePath>;
@@ -13,10 +14,51 @@ pub struct Context {
     env: Environment,
 }
 
+fn prelude_paths() -> Vec<UsePath> {
+    vec![
+        path!["std", "marker", "Copy"],
+        path!["std", "marker", "Send"],
+        path!["std", "marker", "Sized"],
+        path!["std", "marker", "Sync"],
+        path!["std", "marker", "Unpin"],
+        path!["std", "ops", "Drop"],
+        path!["std", "ops", "Fn"],
+        path!["std", "ops", "FnMut"],
+        path!["std", "ops", "FnOnce"],
+        path!["std", "mem", "drop"],
+        path!["std", "boxed", "Box"],
+        path!["std", "borrow", "ToOwned"],
+        path!["std", "clone", "Clone"],
+        path!["std", "cmp", "PartialEq"],
+        path!["std", "cmp", "PartialOrd"],
+        path!["std", "cmp", "Eq"],
+        path!["std", "cmp", "Ord"],
+        path!["std", "convert", "AsRef"],
+        path!["std", "convert", "AsMut"],
+        path!["std", "convert", "Into"],
+        path!["std", "convert", "From"],
+        path!["std", "default", "Default"],
+        path!["std", "iter", "Iterator"],
+        path!["std", "iter", "Extend"],
+        path!["std", "iter", "IntoIterator"],
+        path!["std", "iter", "DoubleEndedIterator"],
+        path!["std", "iter", "ExactSizeIterator"],
+        path!["std", "option", "Option"],
+        path!["std", "option", "Option", "Some"],
+        path!["std", "option", "Option", "None"],
+        path!["std", "result", "Result"],
+        path!["std", "result", "Result", "Ok"],
+        path!["std", "result", "Result", "Err"],
+        path!["std", "string", "String"],
+        path!["std", "string", "ToString"],
+        path!["std", "vec", "Vec"],
+    ]
+}
+
 impl Context {
     pub fn new() -> Self {
         let mut paths = Vec::new();
-        paths.push(Vec::new()); // For the global scope
+        paths.push(prelude_paths()); // For the global scope
         Self {
             use_paths: paths,
             env: Environment::new(),

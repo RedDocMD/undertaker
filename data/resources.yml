@@ -95,6 +95,18 @@ callables:
           type_params:
             - T
 
+  - Vec_clone:
+      id: std::vec::Vec::clone
+      type_params:
+        - T
+      ctype: Method
+      args: []
+      ret:
+        - cat: Res
+          name: Vec
+          type_params:
+            - T
+
   - oneshot_channel:
       id: tokio::sync::oneshot::channel
       type_params:
@@ -122,6 +134,7 @@ creators:
       - Notify_new
 
   - Vec:
+      - Vec_clone
       - Vec_new
 
   - oneshot_send:
@@ -152,4 +165,25 @@ specialize:
       type_map:
         - T:
             res: Notify
+            type_map: []
+
+  - Vec<i64>:
+      res: Vec
+      type_map:
+        - T:
+            res: i64
+            type_map: []
+
+  - oneshot::Sender<i64>:
+      res: oneshot_send
+      type_map:
+        - T:
+            res: i64
+            type_map: []
+
+  - oneshot::Reciever<i64>:
+      res: oneshot_recv
+      type_map:
+        - T:
+            res: i64
             type_map: []
