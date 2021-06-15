@@ -15,6 +15,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     let info_filename = &args[1];
     let info = parse_resource_file(info_filename)?;
 
+    println!("{}", "Callables".magenta());
+    for callable in info.callables() {
+        println!("{} {}", "⇒".blue(), callable);
+    }
+    println!();
+
     let code_filename = &args[2];
     let mut file = File::open(code_filename)?;
     let mut src = String::new();

@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{hash_map::DefaultHasher, HashMap, HashSet},
     error::Error,
     fmt::{self, Display, Formatter, Write},
     fs::File,
@@ -104,6 +104,15 @@ impl PartialEq for Resource {
 impl Hash for Resource {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.id.to_string().hash(state);
+        for (key, value) in &self.type_map {
+            let mut def_hasher = DefaultHasher::new();
+            key.hash(&mut def_hasher);
+            let key_hash = def_hasher.finish();
+            let mut def_hasher = DefaultHasher::new();
+            value.hash(&mut def_hasher);
+            let value_hash = def_hasher.finish();
+            state.write_u64(key_hash ^ value_hash);
+        }
     }
 }
 
@@ -187,7 +196,7 @@ pub struct GenericCallable {
     ret: GenericReturn,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Callable {
     id: ResourceID,
     ctype: CallableType,
@@ -278,7 +287,7 @@ impl Monomorphisable<Callable> for GenericCallable {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CallableType {
     Function,
     Method,
@@ -312,7 +321,7 @@ pub enum GenericArg {
     Tuple(Vec<GenericArg>),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Arg {
     Res(Resource),
     Tuple(Vec<Arg>),
@@ -405,7 +414,7 @@ pub struct ResourceFile {
     gen_callables: HashMap<ResourceID, GenericCallable>,
     gen_creators: HashMap<ResourceID, Vec<ResourceID>>,
     specializations: HashMap<String, Resource>,
-    callables: Vec<Callable>,
+    callables: HashSet<Callable>,
 }
 
 impl ResourceFile {
@@ -424,7 +433,7 @@ impl ResourceFile {
         }
     }
 
-    pub fn callables(&self) -> &Vec<Callable> {
+    pub fn callables(&self) -> &HashSet<Callable> {
         &self.callables
     }
 
@@ -449,13 +458,13 @@ fn generate_creators_of_resource(
     resource: &Resource,
     gen_creators: &HashMap<ResourceID, Vec<ResourceID>>,
     gen_callables: &HashMap<ResourceID, GenericCallable>,
-    callables: &mut Vec<Callable>,
+    callables: &mut HashSet<Callable>,
 ) {
     if let Some(spec_gen_creators) = gen_creators.get(&resource.id) {
         for gen_creator_id in spec_gen_creators {
             if let Some(gen_creator) = gen_callables.get(gen_creator_id) {
                 if let Some(creator) = gen_creator.monomorphise(resource.type_map.clone()) {
-                    callables.push(creator);
+                    callables.insert(creator);
                 }
             }
         }
@@ -542,7 +551,7 @@ pub fn parse_resource_file<T: AsRef<path::Path>>(
         gen_callables,
         gen_creators: creators,
         specializations,
-        callables: Vec::new(),
+        callables: HashSet::new(),
     };
     info.create_callables();
 
