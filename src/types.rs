@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{hash_map::DefaultHasher, HashMap, HashSet},
     error::Error,
     fmt::{self, Display, Formatter, Write},
     fs::File,
@@ -11,7 +11,7 @@ use std::{
 use linked_hash_map::LinkedHashMap;
 use yaml_rust::{Yaml, YamlLoader};
 
-use crate::uses::{self, UsePath};
+use crate::uses::{self, UsePath, UsePathComponent};
 
 pub type ResourceID = UsePath;
 
@@ -95,6 +95,27 @@ impl Hash for GenericResource {
     }
 }
 
+impl PartialEq for Resource {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id && self.type_map == other.type_map
+    }
+}
+
+impl Hash for Resource {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id.to_string().hash(state);
+        for (key, value) in &self.type_map {
+            let mut def_hasher = DefaultHasher::new();
+            key.hash(&mut def_hasher);
+            let key_hash = def_hasher.finish();
+            let mut def_hasher = DefaultHasher::new();
+            value.hash(&mut def_hasher);
+            let value_hash = def_hasher.finish();
+            state.write_u64(key_hash ^ value_hash);
+        }
+    }
+}
+
 impl Monomorphisable<Resource> for GenericResource {
     fn monomorphise(&self, type_map: HashMap<TypeParam, Resource>) -> Option<Resource> {
         if type_map.len() != self.type_params.len() {
@@ -130,10 +151,20 @@ impl Display for GenericResource {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq)]
 pub struct Resource {
     id: ResourceID,
     type_map: HashMap<TypeParam, Resource>,
+}
+
+impl Resource {
+    pub fn id(&self) -> &ResourceID {
+        &self.id
+    }
+
+    pub fn type_map(&self) -> &HashMap<TypeParam, Resource> {
+        &self.type_map
+    }
 }
 
 impl Display for Resource {
@@ -165,12 +196,30 @@ pub struct GenericCallable {
     ret: GenericReturn,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Callable {
     id: ResourceID,
     ctype: CallableType,
-    args: Vec<Resource>,
+    args: Vec<Arg>,
     ret: Return,
+}
+
+impl Callable {
+    pub fn id(&self) -> &ResourceID {
+        &self.id
+    }
+
+    pub fn ctype(&self) -> CallableType {
+        self.ctype
+    }
+
+    pub fn args(&self) -> &Vec<Arg> {
+        &self.args
+    }
+
+    pub fn ret(&self) -> &Return {
+        &self.ret
+    }
 }
 
 impl Display for GenericCallable {
@@ -191,11 +240,27 @@ impl Display for GenericCallable {
             .map(|item| item.name.clone())
             .collect();
         let params_str = params.join(", ");
-        write!(f, "{}", self.id)?;
+        write!(f, "fn {}", self.id)?;
         if params.len() != 0 {
             write!(f, "<{}>", params_str)?;
         }
-        write!(f, "({}) {}", args_str, self.ret)
+        write!(f, "({}) -> {}", args_str, self.ret)
+    }
+}
+
+impl Display for Callable {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let args: Vec<String> = self
+            .args
+            .iter()
+            .map(|item| {
+                let mut output = String::new();
+                write!(&mut output, "{}", item).expect("failed to string");
+                output
+            })
+            .collect();
+        let args_str = args.join(", ");
+        write!(f, "fn {}({}) {}", self.id, args_str, self.ret)
     }
 }
 
@@ -222,7 +287,7 @@ impl Monomorphisable<Callable> for GenericCallable {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CallableType {
     Function,
     Method,
@@ -249,10 +314,17 @@ impl Display for CallableType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum GenericArg {
     Type(TypeParam),
     Res(GenericResource),
+    Tuple(Vec<GenericArg>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Arg {
+    Res(Resource),
+    Tuple(Vec<Arg>),
 }
 
 impl Display for GenericArg {
@@ -260,64 +332,67 @@ impl Display for GenericArg {
         match self {
             Self::Type(param) => write!(f, "{}", param.name),
             Self::Res(res) => write!(f, "{}", res),
-        }
-    }
-}
-
-impl Monomorphisable<Resource> for GenericArg {
-    fn monomorphise(&self, type_map: HashMap<TypeParam, Resource>) -> Option<Resource> {
-        match self {
-            Self::Type(type_param) => type_map.get(type_param).cloned(),
-            Self::Res(gen_res) => gen_res.monomorphise(type_map),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct GenericReturn {
-    rets: Vec<GenericArg>,
-}
-
-#[derive(Debug)]
-pub struct Return {
-    rets: Vec<Resource>,
-}
-
-impl Display for GenericReturn {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let args: Vec<String> = self
-            .rets
-            .iter()
-            .map(|item| {
-                let mut output = String::new();
-                write!(&mut output, "{}", item).expect("failed to string");
-                output
-            })
-            .collect();
-        let args_str = args.join(", ");
-        if args.len() == 1 {
-            write!(f, "-> {}", args_str)
-        } else if args.len() > 1 {
-            write!(f, "-> ({})", args_str)
-        } else {
-            Ok(())
-        }
-    }
-}
-
-impl Monomorphisable<Return> for GenericReturn {
-    fn monomorphise(&self, type_map: HashMap<TypeParam, Resource>) -> Option<Return> {
-        let mut rets = Vec::new();
-        for gen_ret in &self.rets {
-            if let Some(ret) = gen_ret.monomorphise(type_map.clone()) {
-                rets.push(ret);
-            } else {
-                return None;
+            Self::Tuple(tuple) => {
+                let arg_strs: Vec<String> = tuple
+                    .iter()
+                    .map(|arg| {
+                        let mut s = String::new();
+                        write!(&mut s, "{}", arg).expect("Expected to be able to write to string");
+                        s
+                    })
+                    .collect();
+                write!(f, "({})", arg_strs.join(", "))
             }
         }
-        Some(Return { rets })
     }
 }
+
+impl Display for Arg {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Res(res) => write!(f, "{}", res),
+            Self::Tuple(tuple) => {
+                let arg_strs: Vec<String> = tuple
+                    .iter()
+                    .map(|arg| {
+                        let mut s = String::new();
+                        write!(&mut s, "{}", arg).expect("Expected to be able to write to string");
+                        s
+                    })
+                    .collect();
+                write!(f, "({})", arg_strs.join(", "))
+            }
+        }
+    }
+}
+
+impl Monomorphisable<Arg> for GenericArg {
+    fn monomorphise(&self, type_map: HashMap<TypeParam, Resource>) -> Option<Arg> {
+        match self {
+            Self::Type(type_param) => type_map
+                .get(type_param)
+                .cloned()
+                .and_then(|res| Some(Arg::Res(res))),
+            Self::Res(gen_res) => gen_res
+                .monomorphise(type_map)
+                .and_then(|res| Some(Arg::Res(res))),
+            Self::Tuple(tuple) => {
+                let args = tuple.iter().map(|arg| arg.monomorphise(type_map.clone()));
+                let valid = args.clone().all(|item| item.is_some());
+                if valid {
+                    let args: Vec<Arg> = args.map(|item| item.unwrap()).collect();
+                    Some(Arg::Tuple(args))
+                } else {
+                    None
+                }
+            }
+        }
+    }
+}
+
+pub type GenericReturn = GenericArg;
+
+pub type Return = Arg;
 
 fn primitive_types_as_resources() -> HashMap<String, GenericResource> {
     let types = vec![
@@ -335,10 +410,68 @@ fn primitive_types_as_resources() -> HashMap<String, GenericResource> {
 }
 
 pub struct ResourceFile {
-    pub gen_resources: HashMap<String, GenericResource>,
-    pub gen_callables: HashMap<String, GenericCallable>,
-    pub gen_creators: HashMap<String, Vec<String>>,
-    pub specializations: Vec<Resource>,
+    gen_resources: HashMap<ResourceID, GenericResource>,
+    gen_callables: HashMap<ResourceID, GenericCallable>,
+    gen_creators: HashMap<ResourceID, Vec<ResourceID>>,
+    specializations: HashMap<String, Resource>,
+    callables: HashSet<Callable>,
+}
+
+impl ResourceFile {
+    fn create_callables(&mut self) {
+        self.specialize_creators();
+    }
+
+    fn specialize_creators(&mut self) {
+        for (_, spec) in &self.specializations {
+            generate_creators_of_resource(
+                spec,
+                &self.gen_creators,
+                &self.gen_callables,
+                &mut self.callables,
+            );
+        }
+    }
+
+    pub fn callables(&self) -> &HashSet<Callable> {
+        &self.callables
+    }
+
+    pub fn specializations(&self) -> &HashMap<String, Resource> {
+        &self.specializations
+    }
+
+    pub fn gen_creators(&self) -> &HashMap<ResourceID, Vec<ResourceID>> {
+        &self.gen_creators
+    }
+
+    pub fn gen_callables(&self) -> &HashMap<ResourceID, GenericCallable> {
+        &self.gen_callables
+    }
+
+    pub fn gen_resources(&self) -> &HashMap<ResourceID, GenericResource> {
+        &self.gen_resources
+    }
+}
+
+fn generate_creators_of_resource(
+    resource: &Resource,
+    gen_creators: &HashMap<ResourceID, Vec<ResourceID>>,
+    gen_callables: &HashMap<ResourceID, GenericCallable>,
+    callables: &mut HashSet<Callable>,
+) {
+    if let Some(spec_gen_creators) = gen_creators.get(&resource.id) {
+        for gen_creator_id in spec_gen_creators {
+            if let Some(gen_creator) = gen_callables.get(gen_creator_id) {
+                if let Some(creator) = gen_creator.monomorphise(resource.type_map.clone()) {
+                    callables.insert(creator);
+                }
+            }
+        }
+        for (_, res) in &resource.type_map {
+            generate_creators_of_resource(res, gen_creators, gen_callables, callables);
+        }
+    }
 }
 
 pub fn parse_resource_file<T: AsRef<path::Path>>(
@@ -391,24 +524,38 @@ pub fn parse_resource_file<T: AsRef<path::Path>>(
         }
     }
 
-    let mut specializations = Vec::new();
+    let mut specializations = HashMap::new();
 
     if let Some(specialize_yaml) = doc.get(&Yaml::from_str("specialize")) {
         let specialize_yaml = specialize_yaml
             .as_vec()
             .ok_or(ParseErr::new("expected specializartions to be an array"))?;
         for yaml in specialize_yaml {
-            let (_, res) = parse_specialization_from_yaml(yaml, &resources)?;
-            specializations.push(res);
+            let (name, res) = parse_specialization_from_yaml(yaml, &resources)?;
+            specializations.insert(name, res);
         }
     }
 
-    Ok(ResourceFile {
-        gen_resources: resources,
-        gen_callables: callables,
+    let mut gen_resources = HashMap::new();
+    for (_, res) in resources {
+        gen_resources.insert(res.id.clone(), res);
+    }
+
+    let mut gen_callables = HashMap::new();
+    for (_, call) in callables {
+        gen_callables.insert(call.id.clone(), call);
+    }
+
+    let mut info = ResourceFile {
+        gen_resources,
+        gen_callables,
         gen_creators: creators,
         specializations,
-    })
+        callables: HashSet::new(),
+    };
+    info.create_callables();
+
+    Ok(info)
 }
 
 fn parse_resource_from_yaml(yaml: &Yaml) -> Result<(String, GenericResource), Box<dyn Error>> {
@@ -521,6 +668,14 @@ fn parse_callable_from_yaml(
                     ))));
                 }
                 args.push(GenericArg::Type(type_param));
+            } else if cat == "Tuple" {
+                let members_list = arg_hash
+                    .get(&Yaml::from_str("members"))
+                    .ok_or(ParseErr::new("tuple type must have members"))?
+                    .as_vec()
+                    .ok_or(ParseErr::new("expected members to be a list"))?;
+                let sub_args = arg_vec_from_yaml(members_list, resources_map, type_params)?;
+                args.push(GenericArg::Tuple(sub_args));
             } else {
                 return Err(Box::new(ParseErr(format!(
                     "{} isn't a valid type of arg",
@@ -577,9 +732,13 @@ fn parse_callable_from_yaml(
         let ctype = CallableType::from_str(ctype_str)
             .ok_or(ParseErr(format!("invalid ctype: {}", ctype_str)))?;
         let args = arg_vec_from_yaml(args_vec, resources_map, &type_params)?;
-        let ret = GenericReturn {
-            rets: arg_vec_from_yaml(ret_vec, resources_map, &type_params)?,
-        };
+        let ret_vec = arg_vec_from_yaml(ret_vec, resources_map, &type_params)?;
+        if ret_vec.len() != 1 {
+            return Err(Box::new(ParseErr::new(
+                "expected return to be a single arg",
+            )));
+        }
+        let ret = ret_vec.into_iter().next().unwrap();
 
         let callable = GenericCallable {
             id,
@@ -597,7 +756,7 @@ fn parse_creator_from_yaml(
     yaml: &Yaml,
     res_map: &HashMap<String, GenericResource>,
     call_map: &HashMap<String, GenericCallable>,
-) -> Result<(String, Vec<String>), Box<dyn Error>> {
+) -> Result<(ResourceID, Vec<ResourceID>), Box<dyn Error>> {
     let hash = yaml
         .as_hash()
         .ok_or(ParseErr::new("expected each creator to be a hash"))?;
@@ -614,22 +773,23 @@ fn parse_creator_from_yaml(
                 name
             ))));
         }
+        let res_id = res_map[name].id.clone();
 
         let creators_vec = value
             .as_vec()
             .ok_or(ParseErr::new("expected creator names to be a list"))?;
-        let creators: Vec<String> = creators_vec
+        let creator_ids: Vec<ResourceID> = creators_vec
             .iter()
             .map(|item| {
                 let call_name = item.as_str().expect("expected creator name to be a string");
                 if !call_map.contains_key(call_name) {
                     panic!("{} is not defined as a callable", call_name);
                 }
-                call_name.to_string()
+                call_map[call_name].id.clone()
             })
             .collect();
 
-        return Ok((name.to_string(), creators));
+        return Ok((res_id, creator_ids));
     }
     unreachable!()
 }
@@ -716,4 +876,41 @@ impl ParseErr {
     fn new(s: &str) -> Self {
         Self(s.to_string())
     }
+}
+
+/// Attempts to remove `path` from `id` if `path` is an acceptable prefix of `id`.
+///
+/// Criterion for acceptability: Assume that path is used as a use path in a Rust module.
+/// If a function is directly a member of *that* module, and we attempt to use id, then
+/// path is acceptable if it **shortens** the length of id that is required to be used.
+///
+/// *Example*: If we want to invoke `tokio::sync::oneshot::channel` (this is `id`), then
+/// all the acceptable paths are: `tokio`, `tokio::*`, `tokio::sync`, `tokio::sync::*`,
+/// `tokio::sync::oneshot`, `tokio::sync::oneshot::*`, `tokio::sync::oneshot::channel`.
+pub fn trim_common(id: &ResourceID, path: &UsePath) -> Option<ResourceID> {
+    let path_comps = path.components();
+    let id_comps = id.components();
+    if let Some(new_comps) = id_comps.strip_prefix(&path_comps[0..path_comps.len() - 1]) {
+        let path_comps_last = path_comps.last().unwrap();
+        match path_comps_last {
+            &UsePathComponent::Glob => return Some(UsePath::from(&new_comps.to_vec())),
+            &UsePathComponent::Name(_) => {
+                if id_comps.starts_with(&path_comps) {
+                    return Some(UsePath::from(&new_comps.to_vec()));
+                }
+            }
+            UsePathComponent::Alias(alias) => {
+                let (from, to) = alias.to_pair();
+                let new_first = new_comps.first().unwrap();
+                if let UsePathComponent::Name(name) = new_first {
+                    if name == from {
+                        let mut new_comps = new_comps.to_vec().clone();
+                        new_comps[0] = UsePathComponent::Name(to.to_string());
+                        return Some(UsePath::from(&new_comps));
+                    }
+                }
+            }
+        };
+    }
+    None
 }
