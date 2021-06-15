@@ -2,6 +2,8 @@ use std::fmt::{self, Display, Formatter};
 
 use syn::{Block, Expr, Pat, Path, Stmt};
 
+use log::{debug, info};
+
 use crate::{
     context::Context,
     resource::ResourceID,
@@ -57,12 +59,12 @@ pub fn callable_from_expr(
                             }
                         });
                         if args_valid {
-                            println!("Found {}", format!("{}", callable).green());
+                            info!("Found {}", format!("{}", callable).green());
                             return true;
                         }
                     }
                 }
-                _ => println!("ignored fn call"),
+                _ => debug!("ignored fn call"),
             }
         }
         Expr::MethodCall(expr) => {
@@ -87,7 +89,7 @@ pub fn callable_from_expr(
                                     }
                                 });
                                 if args_valid {
-                                    println!("Found {}", format!("{}", callable).green());
+                                    info!("Found {}", format!("{}", callable).green());
                                     return true;
                                 }
                             }
@@ -96,7 +98,7 @@ pub fn callable_from_expr(
                 }
             }
         }
-        _ => println!("ignored"),
+        _ => debug!("ignored"),
     }
     false
 }
@@ -121,7 +123,7 @@ pub fn creator_from_block(
                     }
                 }
             }
-            _ => println!("ignored stmt"),
+            _ => debug!("ignored stmt"),
         }
     }
 }

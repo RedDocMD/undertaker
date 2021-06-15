@@ -11,3 +11,5 @@ syn = {version = "1.0.72", features = ["full", "extra-traits"]}
 yaml-rust = "0.4.5"
 linked-hash-map = "0.5.4"
 colored = "2.0.0"
+env_logger = "0.8.4"
+log = "0.4.14"

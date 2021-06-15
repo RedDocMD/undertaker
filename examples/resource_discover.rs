@@ -10,6 +10,20 @@ use undertaker::{
 };
 
 fn main() -> Result<(), Box<dyn Error>> {
+    env_logger::builder()
+        .filter_level(log::LevelFilter::Debug)
+        .format(|buf, rec| {
+            let line = rec
+                .line()
+                .map_or(String::new(), |line| format!(":{}", line));
+            let file = rec
+                .file()
+                .map_or(String::new(), |file| format!(" {}", file));
+            writeln!(buf, "[{}{}{}] {}", rec.level(), file, line, rec.args())
+        })
+        .write_style(env_logger::WriteStyle::Always)
+        .init();
+
     let args: Vec<String> = env::args().collect();
 
     let info_filename = &args[1];
