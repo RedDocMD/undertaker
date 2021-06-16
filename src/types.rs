@@ -15,7 +15,7 @@ use crate::uses::{self, UsePath, UsePathComponent};
 
 pub type ResourceID = UsePath;
 
-#[derive(Debug, Eq)]
+#[derive(Debug, Eq, Clone)]
 pub struct GenericResource {
     id: ResourceID,
     type_params: Vec<TypeParam>,
@@ -244,7 +244,11 @@ impl Display for GenericCallable {
         if params.len() != 0 {
             write!(f, "<{}>", params_str)?;
         }
-        write!(f, "({}) -> {}", args_str, self.ret)
+        write!(f, "({})", args_str)?;
+        if !self.ret.is_void() {
+            write!(f, " -> {}", self.ret)?;
+        }
+        Ok(())
     }
 }
 
@@ -260,7 +264,11 @@ impl Display for Callable {
             })
             .collect();
         let args_str = args.join(", ");
-        write!(f, "fn {}({}) {}", self.id, args_str, self.ret)
+        write!(f, "fn {}({})", self.id, args_str)?;
+        if !self.ret.is_void() {
+            write!(f, " -> {}", self.ret)?;
+        }
+        Ok(())
     }
 }
 
@@ -275,15 +283,14 @@ impl Monomorphisable<Callable> for GenericCallable {
             }
         }
         if let Some(ret) = self.ret.monomorphise(type_map) {
-            Some(Callable {
+            return Some(Callable {
                 id: self.id.clone(),
                 ctype: self.ctype,
                 args,
                 ret,
-            })
-        } else {
-            None
+            });
         }
+        None
     }
 }
 
@@ -314,7 +321,7 @@ impl Display for CallableType {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum GenericArg {
     Type(TypeParam),
     Res(GenericResource),
@@ -390,9 +397,86 @@ impl Monomorphisable<Arg> for GenericArg {
     }
 }
 
-pub type GenericReturn = GenericArg;
+#[derive(PartialEq, Eq, Debug, Clone, Hash)]
+pub enum GenericReturn {
+    Void,
+    NonVoid(GenericArg),
+}
 
-pub type Return = Arg;
+impl GenericReturn {
+    pub fn is_void(&self) -> bool {
+        match self {
+            Self::Void => true,
+            Self::NonVoid(_) => false,
+        }
+    }
+}
+
+impl Display for GenericReturn {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        if let Self::NonVoid(arg) = self {
+            write!(f, "{}", arg)?;
+        }
+        Ok(())
+    }
+}
+
+impl Monomorphisable<Return> for GenericReturn {
+    fn monomorphise(&self, type_map: HashMap<TypeParam, Resource>) -> Option<Return> {
+        match self {
+            Self::Void => Some(Return::Void),
+            Self::NonVoid(arg) => arg
+                .monomorphise(type_map)
+                .and_then(|arg| Some(Return::NonVoid(arg))),
+        }
+    }
+}
+
+#[derive(PartialEq, Eq, Debug, Clone, Hash)]
+pub enum Return {
+    Void,
+    NonVoid(Arg),
+}
+
+impl Return {
+    pub fn is_void(&self) -> bool {
+        match self {
+            Self::Void => true,
+            Self::NonVoid(_) => false,
+        }
+    }
+
+    pub fn as_non_void(&self) -> &Arg {
+        match self {
+            Self::Void => panic!("Failed to convert void Return to non-void"),
+            Self::NonVoid(arg) => arg,
+        }
+    }
+}
+
+impl PartialEq<Arg> for Return {
+    fn eq(&self, rhs: &Arg) -> bool {
+        match self {
+            Self::Void => false,
+            Self::NonVoid(arg) => arg == rhs,
+        }
+    }
+}
+
+impl PartialEq<Return> for Arg {
+    fn eq(&self, rhs: &Return) -> bool {
+        rhs == self
+    }
+}
+
+impl Display for Return {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        if let Self::NonVoid(arg) = self {
+            write!(f, "{}", arg)?;
+        }
+        Ok(())
+    }
+}
 
 fn primitive_types_as_resources() -> HashMap<String, GenericResource> {
     let types = vec![
@@ -733,12 +817,14 @@ fn parse_callable_from_yaml(
             .ok_or(ParseErr(format!("invalid ctype: {}", ctype_str)))?;
         let args = arg_vec_from_yaml(args_vec, resources_map, &type_params)?;
         let ret_vec = arg_vec_from_yaml(ret_vec, resources_map, &type_params)?;
-        if ret_vec.len() != 1 {
+        let mut ret = GenericReturn::Void;
+        if ret_vec.len() == 1 {
+            ret = GenericReturn::NonVoid(ret_vec.into_iter().next().unwrap());
+        } else if ret_vec.len() != 0 {
             return Err(Box::new(ParseErr::new(
-                "expected return to be a single arg",
+                "expected return to be a single arg or void",
             )));
         }
-        let ret = ret_vec.into_iter().next().unwrap();
 
         let callable = GenericCallable {
             id,

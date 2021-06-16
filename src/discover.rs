@@ -77,20 +77,22 @@ pub fn callable_from_expr(
             if let UsePathComponent::Name(method_name) = cid_parts.last().unwrap() {
                 if method_name == &expr.method.to_string() {
                     if let Some(reciever_type) = get_expr_type(expr.receiver.as_ref(), ctx, info) {
-                        if let Arg::Res(reciever_res) = reciever_type {
-                            if reciever_res.id() == &base_res_id {
-                                let mut args_and_types =
-                                    expr.args.iter().zip(callable.args().iter());
-                                let args_valid = args_and_types.all(|(expr, res)| {
-                                    if let Some(expr_res) = get_expr_type(expr, ctx, info) {
-                                        &expr_res == res
-                                    } else {
-                                        false
+                        if let Return::NonVoid(reciever_type) = reciever_type {
+                            if let Arg::Res(reciever_res) = reciever_type {
+                                if reciever_res.id() == &base_res_id {
+                                    let mut args_and_types =
+                                        expr.args.iter().zip(callable.args().iter());
+                                    let args_valid = args_and_types.all(|(expr, res)| {
+                                        if let Some(expr_res) = get_expr_type(expr, ctx, info) {
+                                            &expr_res == res
+                                        } else {
+                                            false
+                                        }
+                                    });
+                                    if args_valid {
+                                        info!("Found {}", format!("{}", callable).green());
+                                        return true;
                                     }
-                                });
-                                if args_valid {
-                                    info!("Found {}", format!("{}", callable).green());
-                                    return true;
                                 }
                             }
                         }
@@ -110,6 +112,7 @@ pub fn creator_from_block(
     ctx: &mut Context,
     info: &ResourceFile,
 ) {
+    assert!(!creator.ret().is_void());
     for stmt in &block.stmts {
         match stmt {
             Stmt::Local(stmt) => {
@@ -117,7 +120,7 @@ pub fn creator_from_block(
                     if callable_from_expr(init.as_ref(), creator, ctx, info) {
                         let ret = creator.ret();
                         let pat = &stmt.pat;
-                        let name = match_arg_to_pat(resource, ret, pat).unwrap();
+                        let name = match_arg_to_pat(resource, ret.as_non_void(), pat).unwrap();
                         let ob = Object::new(name, resource.clone());
                         ctx.add_binding(ob.name.clone(), ob);
                     }
@@ -176,7 +179,7 @@ fn get_expr_type(expr: &Expr, ctx: &Context, info: &ResourceFile) -> Option<Retu
             if segments.len() == 1 {
                 let name = &segments[0];
                 if let Some(ob) = ctx.get_binding(name) {
-                    return Some(Return::Res(ob.res.clone()));
+                    return Some(Return::NonVoid(Arg::Res(ob.res.clone())));
                 }
             }
         }
@@ -222,19 +225,21 @@ fn get_expr_type(expr: &Expr, ctx: &Context, info: &ResourceFile) -> Option<Retu
                         if let Some(reciever_type) =
                             get_expr_type(expr.receiver.as_ref(), ctx, info)
                         {
-                            if let Arg::Res(reciever_res) = reciever_type {
-                                if reciever_res.id() == &base_res_id {
-                                    let mut args_and_types =
-                                        expr.args.iter().zip(callable.args().iter());
-                                    let args_valid = args_and_types.all(|(expr, res)| {
-                                        if let Some(expr_res) = get_expr_type(expr, ctx, info) {
-                                            &expr_res == res
-                                        } else {
-                                            false
+                            if let Return::NonVoid(reciever_type) = reciever_type {
+                                if let Arg::Res(reciever_res) = reciever_type {
+                                    if reciever_res.id() == &base_res_id {
+                                        let mut args_and_types =
+                                            expr.args.iter().zip(callable.args().iter());
+                                        let args_valid = args_and_types.all(|(expr, res)| {
+                                            if let Some(expr_res) = get_expr_type(expr, ctx, info) {
+                                                &expr_res == res
+                                            } else {
+                                                false
+                                            }
+                                        });
+                                        if args_valid {
+                                            return Some(callable.ret().clone());
                                         }
-                                    });
-                                    if args_valid {
-                                        return Some(callable.ret().clone());
                                     }
                                 }
                             }
