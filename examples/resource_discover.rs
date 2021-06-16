@@ -1,6 +1,7 @@
 use std::{env, error::Error, fs::File, io::prelude::*};
 
 use colored::*;
+use log::debug;
 use syn::Item;
 use undertaker::{
     context::Context,
@@ -11,7 +12,7 @@ use undertaker::{
 
 fn main() -> Result<(), Box<dyn Error>> {
     env_logger::builder()
-        .filter_level(log::LevelFilter::Debug)
+        .filter_level(log::LevelFilter::Info)
         .format(|buf, rec| {
             let line = rec
                 .line()
@@ -19,7 +20,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             let file = rec
                 .file()
                 .map_or(String::new(), |file| format!(" {}", file));
-            writeln!(buf, "[{}{}{}] {}", rec.level(), file, line, rec.args())
+            let prelude = format!("[{}{}{}]", rec.level(), file, line);
+            writeln!(buf, "{} {}", prelude.cyan(), rec.args())
         })
         .write_style(env_logger::WriteStyle::Always)
         .init();
@@ -63,6 +65,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         for creator_id in creator_ids {
                             let gen_creator = &gen_callables[creator_id];
                             let creator = gen_creator.monomorphise(res.type_map().clone()).unwrap();
+                            debug!("{}", creator.to_string().red());
                             creator_from_block(
                                 func.block.as_ref(),
                                 &creator,

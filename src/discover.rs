@@ -2,7 +2,7 @@ use std::fmt::{self, Display, Formatter};
 
 use syn::{Block, Expr, Pat, Path, Stmt};
 
-use log::{debug, info};
+use log::{debug, info, trace};
 
 use crate::{
     context::Context,
@@ -49,6 +49,7 @@ pub fn callable_from_expr(
             }
             match expr.func.as_ref() {
                 Expr::Path(func) => {
+                    trace!("{}, {:?}", trimmed_id, func.path);
                     if match_expr_path(&trimmed_id, &func.path) {
                         let mut args_and_types = expr.args.iter().zip(callable.args().iter());
                         let args_valid = args_and_types.all(|(expr, res)| {
@@ -189,11 +190,12 @@ fn get_expr_type(expr: &Expr, ctx: &Context, info: &ResourceFile) -> Option<Retu
         Expr::Call(expr) => {
             for callable in info.callables() {
                 if callable.ctype() != CallableType::Function {
-                    return None;
+                    continue;
                 }
                 let trimmed_id = trim_id_by_ctxt(callable.id(), ctx);
                 match expr.func.as_ref() {
                     Expr::Path(func) => {
+                        trace!("{}, {:?}", trimmed_id, func.path);
                         if match_expr_path(&trimmed_id, &func.path) {
                             let mut args_and_types = expr.args.iter().zip(callable.args().iter());
                             let args_valid = args_and_types.all(|(expr, res)| {
@@ -215,7 +217,7 @@ fn get_expr_type(expr: &Expr, ctx: &Context, info: &ResourceFile) -> Option<Retu
         Expr::MethodCall(expr) => {
             for callable in info.callables() {
                 if callable.ctype() != CallableType::Method {
-                    return None;
+                    continue;
                 }
                 let cid = callable.id();
                 let cid_parts = cid.components();
