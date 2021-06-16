@@ -2,12 +2,15 @@ use std::fmt::{self, Display, Formatter};
 
 use syn::{Block, Expr, Pat, Path, Stmt};
 
-use log::{debug, info, trace};
+use log::{debug, info, trace, warn};
+use uuid::Uuid;
 
 use crate::{
     context::Context,
     resource::ResourceID,
-    types::{trim_common, Arg, Callable, CallableType, Resource, ResourceFile, Return},
+    types::{
+        trim_common, Arg, Callable, CallableType, Resource, ResourceFile, Return, UUIDPropagation,
+    },
     uses::{UsePath, UsePathComponent},
 };
 
@@ -114,7 +117,7 @@ pub fn creator_from_block(
     info: &ResourceFile,
 ) {
     assert!(!creator.ret().is_void());
-    for stmt in &block.stmts {
+    for (stmt_idx, stmt) in block.stmts.iter().enumerate() {
         match stmt {
             Stmt::Local(stmt) => {
                 if let Some((_, init)) = &stmt.init {
@@ -125,13 +128,117 @@ pub fn creator_from_block(
                         if ctx.get_binding(&name).is_some() {
                             continue;
                         }
-                        let ob = Object::new(name, resource.clone());
+                        let uuid = match creator.prop() {
+                            UUIDPropagation::Copy(idx) => uuid_from_call_expr(
+                                init.as_ref(),
+                                stmt_idx,
+                                idx,
+                                creator.ctype(),
+                                ctx,
+                            ),
+                            UUIDPropagation::NoCopy => {
+                                if let Some(uuid) =
+                                    ctx.get_expr_uuid(init.as_ref().clone(), stmt_idx)
+                                {
+                                    *uuid
+                                } else {
+                                    let uuid = Uuid::new_v4();
+                                    ctx.add_expr_uuid(init.as_ref().clone(), stmt_idx, uuid);
+                                    uuid
+                                }
+                            }
+                            UUIDPropagation::DontCare => {
+                                warn!(
+                                    "{} is a creator, yet has propagation type DontCare",
+                                    creator
+                                );
+                                Uuid::new_v4()
+                            }
+                        };
+                        let ob = Object::new(name, resource.clone(), uuid);
                         ctx.add_binding(ob.name.clone(), ob);
                     }
                 }
             }
             _ => debug!("ignored stmt"),
         }
+    }
+}
+
+fn uuid_from_call_expr(
+    expr: &Expr,
+    expr_idx: usize,
+    arg_idx: usize,
+    ctype: CallableType,
+    ctx: &mut Context,
+) -> Uuid {
+    fn uuid_from_expr(expr: &Expr, idx: usize, ctx: &mut Context) -> Uuid {
+        if let Some(uuid) = ctx.get_expr_uuid(expr.clone(), idx) {
+            return *uuid;
+        } else {
+            match expr {
+                Expr::Path(expr) => {
+                    let segs = &expr.path.segments;
+                    if segs.len() == 1 {
+                        let name = segs[0].ident.to_string();
+                        if let Some(ob) = ctx.get_binding(&name) {
+                            return ob.internal_uuid;
+                        }
+                    }
+                }
+                Expr::Reference(expr) => {
+                    return uuid_from_expr(expr.expr.as_ref(), idx, ctx);
+                }
+                _ => {}
+            };
+            let uuid = Uuid::new_v4();
+            ctx.add_expr_uuid(expr.clone(), idx, uuid);
+            return uuid;
+        }
+    }
+
+    match expr {
+        Expr::Call(expr) => {
+            assert_eq!(
+                ctype,
+                CallableType::Function,
+                "ctype must be Function to retrieve uuid from function call"
+            );
+            assert!(
+                arg_idx > 0,
+                "idx is {}, but expected non-zero index for function call",
+                arg_idx
+            );
+            assert!(
+                arg_idx <= expr.args.len(),
+                "idx is {} but no. of args is {}",
+                arg_idx,
+                expr.args.len()
+            );
+            let arg = &expr.args[arg_idx - 1];
+            uuid_from_expr(arg, expr_idx, ctx)
+        }
+        Expr::MethodCall(expr) => {
+            assert_eq!(
+                ctype,
+                CallableType::Method,
+                "ctype must be Method to retrieve uuid from function call"
+            );
+            assert!(
+                arg_idx <= expr.args.len(),
+                "idx is {} but no. of args is {}",
+                arg_idx,
+                expr.args.len()
+            );
+            if arg_idx == 0 {
+                let recv = expr.receiver.as_ref();
+                uuid_from_expr(recv, expr_idx, ctx)
+            } else {
+                let arg = &expr.args[arg_idx - 1];
+                uuid_from_expr(arg, expr_idx, ctx)
+            }
+        }
+        _ => unreachable!("{:?} is not a call expression", expr),
     }
 }
 
@@ -261,16 +368,21 @@ fn get_expr_type(expr: &Expr, ctx: &Context, info: &ResourceFile) -> Option<Retu
 pub struct Object {
     name: String,
     res: Resource,
+    internal_uuid: Uuid,
 }
 
 impl Object {
-    fn new(name: String, res: Resource) -> Self {
-        Self { name, res }
+    fn new(name: String, res: Resource, internal_uuid: Uuid) -> Self {
+        Self {
+            name,
+            res,
+            internal_uuid,
+        }
     }
 }
 
 impl Display for Object {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}: {}", self.name, self.res)
+        write!(f, "{}: {}, {}", self.name, self.res, self.internal_uuid)
     }
 }

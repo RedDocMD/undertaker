@@ -229,6 +229,10 @@ impl Callable {
     pub fn ret(&self) -> &Return {
         &self.ret
     }
+
+    pub fn prop(&self) -> UUIDPropagation {
+        self.prop
+    }
 }
 
 impl Display for GenericCallable {
