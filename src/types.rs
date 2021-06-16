@@ -194,6 +194,14 @@ pub struct GenericCallable {
     ctype: CallableType,
     args: Vec<GenericArg>,
     ret: GenericReturn,
+    prop: UUIDPropagation,
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+pub enum UUIDPropagation {
+    Copy(usize),
+    NoCopy,
+    DontCare,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -202,6 +210,7 @@ pub struct Callable {
     ctype: CallableType,
     args: Vec<Arg>,
     ret: Return,
+    prop: UUIDPropagation,
 }
 
 impl Callable {
@@ -288,6 +297,7 @@ impl Monomorphisable<Callable> for GenericCallable {
                 ctype: self.ctype,
                 args,
                 ret,
+                prop: self.prop,
             });
         }
         None
@@ -806,6 +816,11 @@ fn parse_callable_from_yaml(
             .ok_or(ParseErr::new("no ret param of callable"))?
             .as_vec()
             .ok_or(ParseErr::new("ret must be a list"))?;
+        let prop_hash = value
+            .get(&Yaml::from_str("prop"))
+            .ok_or(ParseErr::new("expected prop param of callable"))?
+            .as_hash()
+            .ok_or(ParseErr::new("expected prop param to provide a map"))?;
 
         let id = uses::convert_to_path(&id_str.split("::").collect())
             .ok_or(ParseErr(format!("invalid id: {}", id_str)))?;
@@ -825,6 +840,46 @@ fn parse_callable_from_yaml(
                 "expected return to be a single arg or void",
             )));
         }
+        let prop_type = prop_hash
+            .get(&Yaml::from_str("type"))
+            .ok_or(ParseErr::new("prop map must contain type key"))?
+            .as_str()
+            .ok_or(ParseErr::new("expected type key of prop to be a string"))?;
+        let prop = if prop_type == "DontCare" {
+            UUIDPropagation::DontCare
+        } else if prop_type == "NoCopy" {
+            UUIDPropagation::NoCopy
+        } else if prop_type == "Copy" {
+            let prop_idx = prop_hash
+                .get(&Yaml::from_str("type"))
+                .ok_or(ParseErr::new("prop map of type Copy must contain idx key"))?
+                .as_i64()
+                .ok_or(ParseErr::new("expected idx key of prop to be an integer"))?;
+            if prop_idx < 0 {
+                return Err(Box::new(ParseErr(format!(
+                    "{} is not a valid idx since it must be non-negative",
+                    prop_idx
+                ))));
+            }
+            let prop_idx = prop_idx as usize;
+            if prop_idx == 0 && ctype != CallableType::Method {
+                return Err(Box::new(ParseErr::new(
+                    "idx is 1-indexed. 0 is a special index for method reciever",
+                )));
+            }
+            if prop_idx > args.len() {
+                return Err(Box::new(ParseErr(format!(
+                    "{} is an out-of-bounds idx",
+                    prop_idx
+                ))));
+            }
+            UUIDPropagation::Copy(prop_idx)
+        } else {
+            return Err(Box::new(ParseErr(format!(
+                "{} is not a valid prop type",
+                prop_type
+            ))));
+        };
 
         let callable = GenericCallable {
             id,
@@ -832,6 +887,7 @@ fn parse_callable_from_yaml(
             ctype,
             args,
             ret,
+            prop,
         };
         return Ok((name.to_string(), callable));
     }

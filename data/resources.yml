@@ -44,6 +44,9 @@ callables:
           name: Vec
           type_params:
             - V
+      prop:
+        type: DontCare
+
   - Arc_new:
       id: std::sync::Arc::new
       type_params:
@@ -57,6 +60,10 @@ callables:
           name: Arc
           type_params:
             - T
+      prop:
+        type: Copy
+        idx: 1
+
   - Arc_clone:
       id: std::sync::Arc::clone
       type_params:
@@ -72,6 +79,9 @@ callables:
           name: Arc
           type_params:
             - T
+      prop:
+        type: Copy
+        idx: 1
 
   - Notify_new:
       id: tokio::sync::Notify::new
@@ -82,6 +92,8 @@ callables:
         - cat: Res
           name: Notify
           type_params: []
+      prop:
+        type: NoCopy
 
   - Vec_new:
       id: std::vec::Vec::new
@@ -94,6 +106,8 @@ callables:
           name: Vec
           type_params:
             - T
+      prop:
+        type: NoCopy
 
   - Vec_clone:
       id: std::vec::Vec::clone
@@ -106,6 +120,8 @@ callables:
           name: Vec
           type_params:
             - T
+      prop:
+        type: NoCopy
 
   - oneshot_channel:
       id: tokio::sync::oneshot::channel
@@ -124,6 +140,8 @@ callables:
               name: oneshot_recv
               type_params:
                 - T
+      type:
+        type: NoCopy
 
 creators:
   - Arc:
