@@ -122,6 +122,9 @@ pub fn creator_from_block(
                         let ret = creator.ret();
                         let pat = &stmt.pat;
                         let name = match_arg_to_pat(resource, ret.as_non_void(), pat).unwrap();
+                        if ctx.get_binding(&name).is_some() {
+                            continue;
+                        }
                         let ob = Object::new(name, resource.clone());
                         ctx.add_binding(ob.name.clone(), ob);
                     }

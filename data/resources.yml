@@ -140,7 +140,7 @@ callables:
               name: oneshot_recv
               type_params:
                 - T
-      type:
+      prop:
         type: NoCopy
 
 creators:

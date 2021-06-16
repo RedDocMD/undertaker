@@ -851,7 +851,7 @@ fn parse_callable_from_yaml(
             UUIDPropagation::NoCopy
         } else if prop_type == "Copy" {
             let prop_idx = prop_hash
-                .get(&Yaml::from_str("type"))
+                .get(&Yaml::from_str("idx"))
                 .ok_or(ParseErr::new("prop map of type Copy must contain idx key"))?
                 .as_i64()
                 .ok_or(ParseErr::new("expected idx key of prop to be an integer"))?;
