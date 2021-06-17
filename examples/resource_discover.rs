@@ -4,9 +4,9 @@ use colored::*;
 use log::debug;
 use syn::Item;
 use undertaker::{
+    async_detect::async_in_block,
     context::Context,
     discover::creator_from_block,
-    graph::async_in_block,
     types::{parse_resource_file, Monomorphisable},
     uses,
 };

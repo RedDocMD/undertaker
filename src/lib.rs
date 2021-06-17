@@ -1,3 +1,4 @@
+pub mod async_detect;
 pub mod context;
 pub mod discover;
 pub mod graph;
