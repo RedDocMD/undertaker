@@ -6,6 +6,7 @@ use syn::Item;
 use undertaker::{
     context::Context,
     discover::creator_from_block,
+    graph::async_in_block,
     types::{parse_resource_file, Monomorphisable},
     uses,
 };
@@ -83,6 +84,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
                 }
                 println!("\n{}:\n{}", "Context".yellow(), ctx);
+                async_in_block(&func.block);
+
                 ctx.exit_block();
                 break;
             }

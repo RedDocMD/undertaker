@@ -46,6 +46,7 @@ callables:
             - V
       prop:
         type: DontCare
+      async: false
 
   - Arc_new:
       id: std::sync::Arc::new
@@ -63,6 +64,7 @@ callables:
       prop:
         type: Copy
         idx: 1
+      async: false
 
   - Arc_clone:
       id: std::sync::Arc::clone
@@ -82,6 +84,7 @@ callables:
       prop:
         type: Copy
         idx: 1
+      async: false
 
   - Notify_new:
       id: tokio::sync::Notify::new
@@ -94,6 +97,7 @@ callables:
           type_params: []
       prop:
         type: NoCopy
+      async: false
 
   - Vec_new:
       id: std::vec::Vec::new
@@ -108,6 +112,7 @@ callables:
             - T
       prop:
         type: NoCopy
+      async: false
 
   - Vec_clone:
       id: std::vec::Vec::clone
@@ -122,6 +127,7 @@ callables:
             - T
       prop:
         type: NoCopy
+      async: false
 
   - oneshot_channel:
       id: tokio::sync::oneshot::channel
@@ -142,6 +148,33 @@ callables:
                 - T
       prop:
         type: NoCopy
+      async: false
+
+  - oneshot_send:
+      id: tokio::sync::oneshot::Sender::send
+      type_params:
+        - T
+      ctype: Method
+      args:
+        - cat: Type
+          type_param: T
+      ret: []
+      prop:
+        type: DontCare
+      async: false
+
+  - oneshot_recv:
+      id: tokio::sync::oneshot::Receiver::try_recv
+      type_params:
+        - T
+      ctype: Method
+      args: []
+      ret:
+        - cat: Type
+          type_param: T
+      prop:
+        type: DontCare
+      async: false
 
 creators:
   - Arc:

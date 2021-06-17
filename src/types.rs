@@ -195,6 +195,7 @@ pub struct GenericCallable {
     args: Vec<GenericArg>,
     ret: GenericReturn,
     prop: UUIDPropagation,
+    is_async: bool,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
@@ -211,6 +212,7 @@ pub struct Callable {
     args: Vec<Arg>,
     ret: Return,
     prop: UUIDPropagation,
+    is_async: bool,
 }
 
 impl Callable {
@@ -253,6 +255,9 @@ impl Display for GenericCallable {
             .map(|item| item.name.clone())
             .collect();
         let params_str = params.join(", ");
+        if self.is_async {
+            write!(f, "async ")?;
+        }
         write!(f, "fn {}", self.id)?;
         if params.len() != 0 {
             write!(f, "<{}>", params_str)?;
@@ -277,6 +282,9 @@ impl Display for Callable {
             })
             .collect();
         let args_str = args.join(", ");
+        if self.is_async {
+            write!(f, "async ")?;
+        }
         write!(f, "fn {}({})", self.id, args_str)?;
         if !self.ret.is_void() {
             write!(f, " -> {}", self.ret)?;
@@ -302,6 +310,7 @@ impl Monomorphisable<Callable> for GenericCallable {
                 args,
                 ret,
                 prop: self.prop,
+                is_async: self.is_async,
             });
         }
         None
@@ -825,6 +834,11 @@ fn parse_callable_from_yaml(
             .ok_or(ParseErr::new("expected prop param of callable"))?
             .as_hash()
             .ok_or(ParseErr::new("expected prop param to provide a map"))?;
+        let is_async = value
+            .get(&Yaml::from_str("async"))
+            .ok_or(ParseErr::new("expected async param of callable"))?
+            .as_bool()
+            .ok_or(ParseErr::new("expected async param to be a boolean"))?;
 
         let id = uses::convert_to_path(&id_str.split("::").collect())
             .ok_or(ParseErr(format!("invalid id: {}", id_str)))?;
@@ -892,6 +906,7 @@ fn parse_callable_from_yaml(
             args,
             ret,
             prop,
+            is_async,
         };
         return Ok((name.to_string(), callable));
     }
