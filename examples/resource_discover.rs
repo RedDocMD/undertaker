@@ -84,7 +84,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
                 }
                 println!("\n{}:\n{}", "Context".yellow(), ctx);
-                async_in_block(&func.block);
+                let blocks = async_in_block(&func.block);
+                println!("Found {} blocks", blocks.len().to_string().yellow());
 
                 ctx.exit_block();
                 break;
