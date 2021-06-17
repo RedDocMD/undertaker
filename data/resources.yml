@@ -163,7 +163,7 @@ callables:
         type: DontCare
       async: false
 
-  - oneshot_recv:
+  - oneshot_try_recv:
       id: tokio::sync::oneshot::Receiver::try_recv
       type_params:
         - T
@@ -175,6 +175,26 @@ callables:
       prop:
         type: DontCare
       async: false
+
+  - Notify_notify_one:
+      id: tokio::sync::Notify::notify_one
+      type_params: []
+      ctype: Method
+      args: []
+      ret: []
+      prop:
+        type: DontCare
+      async: false
+
+  - Notify_notified:
+      id: tokio::sync::Notify::notified
+      type_params: []
+      ctype: Method
+      args: []
+      ret: []
+      prop:
+        type: DontCare
+      async: true
 
 creators:
   - Arc:
