@@ -59,12 +59,16 @@ fn prelude_paths() -> Vec<UsePath> {
     ]
 }
 
+impl Default for Context {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Context {
     pub fn new() -> Self {
-        let mut paths = Vec::new();
-        paths.push(prelude_paths()); // For the global scope
         Self {
-            use_paths: paths,
+            use_paths: vec![prelude_paths()],
             env: Environment::new(),
             expr_uuid_store: ExprUuidStore::new(),
         }
@@ -99,7 +103,7 @@ impl Context {
         self.env.add_binding(id, ob);
     }
 
-    pub fn get_binding(&self, id: &String) -> Option<&Object> {
+    pub fn get_binding(&self, id: &str) -> Option<&Object> {
         self.env.get_binding(id)
     }
 
@@ -191,9 +195,10 @@ struct BlockEnvironment {
 
 impl Environment {
     fn new() -> Self {
-        let mut block_envs = Vec::new();
-        block_envs.push(BlockEnvironment::new()); // For the global scope
-        Self { block_envs }
+        // For the global scope
+        Self {
+            block_envs: vec![BlockEnvironment::new()],
+        }
     }
 
     fn enter_block(&mut self) {
@@ -210,7 +215,7 @@ impl Environment {
         block.add_binding(id, ob);
     }
 
-    fn get_binding(&self, id: &String) -> Option<&Object> {
+    fn get_binding(&self, id: &str) -> Option<&Object> {
         for block in self.block_envs.iter().rev() {
             let binding = block.get_binding(id);
             if binding.is_some() {
@@ -232,7 +237,7 @@ impl Display for Environment {
         let mut padding = String::new();
         for block in &self.block_envs {
             padding += "  ";
-            for (_, ob) in &block.id_map {
+            for ob in block.id_map.values() {
                 write!(f, "{}{}\n", padding, ob)?;
             }
         }
@@ -251,7 +256,7 @@ impl BlockEnvironment {
         self.id_map.insert(id, ob);
     }
 
-    fn get_binding(&self, id: &String) -> Option<&Object> {
+    fn get_binding(&self, id: &str) -> Option<&Object> {
         self.id_map.get(id)
     }
 }
