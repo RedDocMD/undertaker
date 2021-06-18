@@ -9,7 +9,7 @@ use syn::{Block, File, Item, Stmt, UseTree};
 /// Since, sometimes use statements are written in a way that require use to know
 /// the contents of a crate, those paths are left partly defined.
 /// Eg: `use std::fs::*;`.
-#[derive(PartialEq, Eq, Debug, Clone)]
+#[derive(Eq, Debug, Clone)]
 pub struct UsePath {
     components: Vec<UsePathComponent>,
 }
@@ -22,7 +22,7 @@ impl Display for UsePath {
             self.components
                 .iter()
                 .map(|x| format!("{}", x))
-                .fold(String::new(), |old, x| if old == "" {
+                .fold(String::new(), |old, x| if old.is_empty() {
                     x
                 } else {
                     old + "::" + &x
@@ -40,6 +40,12 @@ impl UsePath {
 impl Hash for UsePath {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.to_string().hash(state);
+    }
+}
+
+impl PartialEq for UsePath {
+    fn eq(&self, other: &Self) -> bool {
+        self.to_string() == other.to_string()
     }
 }
 
@@ -123,10 +129,8 @@ pub fn extract_block_uses(block: &Block) -> Vec<UsePath> {
         .stmts
         .iter()
         .filter_map(|stmt| {
-            if let Stmt::Item(item) = stmt {
-                if let Item::Use(use_item) = item {
-                    return Some(paths_from_use_tree(&use_item.tree));
-                }
+            if let Stmt::Item(Item::Use(use_item)) = stmt {
+                return Some(paths_from_use_tree(&use_item.tree));
             }
             None
         })
@@ -211,7 +215,7 @@ fn paths_from_use_tree(tree: &UseTree) -> Vec<UsePath> {
 /// we will have no problem.
 pub fn extend_path_once<'par, I>(
     parents: I,
-    children: &Vec<UsePath>,
+    children: &[UsePath],
 ) -> Result<Vec<UsePath>, PathExtendFailed>
 where
     I: Iterator<Item = &'par UsePath> + Clone,
@@ -277,23 +281,23 @@ where
 #[derive(Debug)]
 pub struct PathExtendFailed(String);
 
-pub fn convert_to_path<T: AsRef<str>>(comps: &Vec<T>) -> Option<UsePath> {
+pub fn convert_to_path<T: AsRef<str>>(comps: &[T]) -> Option<UsePath> {
     let parts: Vec<Option<UsePathComponent>> = comps
         .iter()
         .map(|s| {
             if s.as_ref() == "*" {
                 Some(UsePathComponent::Glob)
-            } else if s.as_ref().contains(",") {
-                let words: Vec<&str> = s.as_ref().split(",").map(|s| s.trim()).collect();
+            } else if s.as_ref().contains(',') {
+                let words: Vec<&str> = s.as_ref().split(',').map(|s| s.trim()).collect();
                 if words.len() != 2 {
                     None
                 } else {
                     Some(UsePathComponent::Alias(UsePathComponentAlias::from_pair(
-                        words[0].clone(),
-                        words[1].clone(),
+                        words[0].to_string(),
+                        words[1].to_string(),
                     )))
                 }
-            } else if !s.as_ref().contains(" ") {
+            } else if !s.as_ref().contains(' ') {
                 Some(UsePathComponent::Name(String::from(s.as_ref())))
             } else {
                 None
