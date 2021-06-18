@@ -320,9 +320,7 @@ pub fn convert_to_path<T: AsRef<str>>(comps: &[T]) -> Option<UsePath> {
 #[macro_export]
 macro_rules! path {
     ($($elem:expr),+) => {{
-        let mut vec = Vec::new();
-        $(vec.push($elem);)*
-        crate::uses::convert_to_path(&vec).unwrap()
+        crate::uses::convert_to_path(&[$($elem,)*]).unwrap()
     }};
 }
 

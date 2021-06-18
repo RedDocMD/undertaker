@@ -52,14 +52,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     for item in ast.items {
         if let Item::Fn(func) = item {
             let sig = &func.sig;
-            if sig.ident.to_string() == String::from("main") {
+            if sig.ident == "main" {
                 ctx.enter_block();
                 let block_uses = uses::extract_block_uses(func.block.as_ref());
                 ctx.add_use_paths(block_uses);
 
                 let mut binding_cnt = 0;
                 loop {
-                    for (_, res) in info.specializations() {
+                    for res in info.specializations().values() {
                         let gen_creators_map = info.gen_creators();
                         let creator_ids = &gen_creators_map[res.id()];
                         let gen_callables = info.gen_callables();

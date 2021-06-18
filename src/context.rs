@@ -238,7 +238,7 @@ impl Display for Environment {
         for block in &self.block_envs {
             padding += "  ";
             for ob in block.id_map.values() {
-                write!(f, "{}{}\n", padding, ob)?;
+                writeln!(f, "{}{}", padding, ob)?;
             }
         }
         Ok(())
