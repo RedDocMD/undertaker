@@ -80,24 +80,21 @@ pub fn callable_from_expr(
             let base_res_id = UsePath::from(&cid_parts[0..cid_parts.len() - 1].to_vec());
             if let UsePathComponent::Name(method_name) = cid_parts.last().unwrap() {
                 if method_name == &expr.method.to_string() {
-                    if let Some(reciever_type) = get_expr_type(expr.receiver.as_ref(), ctx, info) {
-                        if let Return::NonVoid(reciever_type) = reciever_type {
-                            if let Arg::Res(reciever_res) = reciever_type {
-                                if reciever_res.id() == &base_res_id {
-                                    let mut args_and_types =
-                                        expr.args.iter().zip(callable.args().iter());
-                                    let args_valid = args_and_types.all(|(expr, res)| {
-                                        if let Some(expr_res) = get_expr_type(expr, ctx, info) {
-                                            &expr_res == res
-                                        } else {
-                                            false
-                                        }
-                                    });
-                                    if args_valid {
-                                        info!("Found {}", format!("{}", callable).green());
-                                        return true;
-                                    }
+                    if let Some(Return::NonVoid(Arg::Res(reciever_res))) =
+                        get_expr_type(expr.receiver.as_ref(), ctx, info)
+                    {
+                        if reciever_res.id() == &base_res_id {
+                            let mut args_and_types = expr.args.iter().zip(callable.args().iter());
+                            let args_valid = args_and_types.all(|(expr, res)| {
+                                if let Some(expr_res) = get_expr_type(expr, ctx, info) {
+                                    &expr_res == res
+                                } else {
+                                    false
                                 }
+                            });
+                            if args_valid {
+                                info!("Found {}", format!("{}", callable).green());
+                                return true;
                             }
                         }
                     }
@@ -174,7 +171,7 @@ fn uuid_from_call_expr(
 ) -> Uuid {
     fn uuid_from_expr(expr: &Expr, idx: usize, ctx: &mut Context) -> Uuid {
         if let Some(uuid) = ctx.get_expr_uuid(expr.clone(), idx) {
-            return *uuid;
+            *uuid
         } else {
             match expr {
                 Expr::Path(expr) => {
@@ -193,7 +190,7 @@ fn uuid_from_call_expr(
             };
             let uuid = Uuid::new_v4();
             ctx.add_expr_uuid(expr.clone(), idx, uuid);
-            return uuid;
+            uuid
         }
     }
 
@@ -303,24 +300,21 @@ fn get_expr_type(expr: &Expr, ctx: &Context, info: &ResourceFile) -> Option<Retu
                     continue;
                 }
                 let trimmed_id = trim_id_by_ctxt(callable.id(), ctx);
-                match expr.func.as_ref() {
-                    Expr::Path(func) => {
-                        trace!("{}, {:?}", trimmed_id, func.path);
-                        if match_expr_path(&trimmed_id, &func.path) {
-                            let mut args_and_types = expr.args.iter().zip(callable.args().iter());
-                            let args_valid = args_and_types.all(|(expr, res)| {
-                                if let Some(expr_res) = get_expr_type(expr, ctx, info) {
-                                    &expr_res == res
-                                } else {
-                                    false
-                                }
-                            });
-                            if args_valid {
-                                return Some(callable.ret().clone());
+                if let Expr::Path(func) = expr.func.as_ref() {
+                    trace!("{}, {:?}", trimmed_id, func.path);
+                    if match_expr_path(&trimmed_id, &func.path) {
+                        let mut args_and_types = expr.args.iter().zip(callable.args().iter());
+                        let args_valid = args_and_types.all(|(expr, res)| {
+                            if let Some(expr_res) = get_expr_type(expr, ctx, info) {
+                                &expr_res == res
+                            } else {
+                                false
                             }
+                        });
+                        if args_valid {
+                            return Some(callable.ret().clone());
                         }
                     }
-                    _ => {}
                 }
             }
         }
@@ -334,25 +328,21 @@ fn get_expr_type(expr: &Expr, ctx: &Context, info: &ResourceFile) -> Option<Retu
                 let base_res_id = UsePath::from(&cid_parts[0..cid_parts.len() - 1].to_vec());
                 if let UsePathComponent::Name(method_name) = cid_parts.last().unwrap() {
                     if method_name == &expr.method.to_string() {
-                        if let Some(reciever_type) =
+                        if let Some(Return::NonVoid(Arg::Res(reciever_res))) =
                             get_expr_type(expr.receiver.as_ref(), ctx, info)
                         {
-                            if let Return::NonVoid(reciever_type) = reciever_type {
-                                if let Arg::Res(reciever_res) = reciever_type {
-                                    if reciever_res.id() == &base_res_id {
-                                        let mut args_and_types =
-                                            expr.args.iter().zip(callable.args().iter());
-                                        let args_valid = args_and_types.all(|(expr, res)| {
-                                            if let Some(expr_res) = get_expr_type(expr, ctx, info) {
-                                                &expr_res == res
-                                            } else {
-                                                false
-                                            }
-                                        });
-                                        if args_valid {
-                                            return Some(callable.ret().clone());
-                                        }
+                            if reciever_res.id() == &base_res_id {
+                                let mut args_and_types =
+                                    expr.args.iter().zip(callable.args().iter());
+                                let args_valid = args_and_types.all(|(expr, res)| {
+                                    if let Some(expr_res) = get_expr_type(expr, ctx, info) {
+                                        &expr_res == res
+                                    } else {
+                                        false
                                     }
+                                });
+                                if args_valid {
+                                    return Some(callable.ret().clone());
                                 }
                             }
                         }
