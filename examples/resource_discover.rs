@@ -1,12 +1,13 @@
-use std::{env, error::Error, fs::File, io::prelude::*};
+use std::{env, error::Error, fs::File, io::prelude::*, rc::Rc};
 
 use colored::*;
 use log::debug;
 use syn::Item;
 use undertaker::{
-    async_detect::async_in_block,
+    async_detect::{async_in_block, AsyncCode},
     context::Context,
     discover::creator_from_block,
+    graph::DepGraph,
     types::{parse_resource_file, Monomorphisable},
     uses,
 };
@@ -86,6 +87,18 @@ fn main() -> Result<(), Box<dyn Error>> {
                 println!("\n{}:\n{}", "Context".yellow(), ctx);
                 let blocks = async_in_block(&func.block);
                 println!("Found {} blocks", blocks.len().to_string().yellow());
+
+                let dep_graphs: Vec<Rc<DepGraph>> = blocks
+                    .into_iter()
+                    .map(|code| match code {
+                        AsyncCode::Block(block) => DepGraph::from_block(&block.block),
+                        AsyncCode::Closure(closure) => DepGraph::from_expr(*closure.body),
+                    })
+                    .collect();
+                println!("\n{}", "DepGraphs:".cyan());
+                for dep_graph in &dep_graphs {
+                    println!("{}", dep_graph);
+                }
 
                 ctx.exit_block();
                 break;
