@@ -6,7 +6,7 @@ use std::{
 };
 
 use syn::{Block, Expr, Item, Pat, Stmt};
-use uuid::Uuid;
+use uuid::{adapter::SimpleRef, Uuid};
 
 type CFGNodeStrongPtr<'ast> = Rc<RefCell<CFGNode<'ast>>>;
 type CFGNodeWeakPtr<'ast> = Weak<RefCell<CFGNode<'ast>>>;
@@ -43,7 +43,10 @@ impl<'ast> CFGNode<'ast> {
     }
 
     fn node_label(&self) -> String {
-        self.uuid.to_string()
+        let simp = self.uuid.to_simple_ref();
+        let mut buf = [0 as u8; SimpleRef::LENGTH];
+        let rep = String::from(simp.encode_lower(&mut buf));
+        String::from("n") + &rep
     }
 
     fn node_info(&self) -> String {
@@ -55,7 +58,7 @@ impl<'ast> CFGNode<'ast> {
             CFGExpr::IfGuard(expr) => format!("if_cond: {}", expr_name(expr)),
             CFGExpr::Phantom => String::from("No-Op"),
         };
-        format!("{}: [label=\"{}\"];", self.node_label(), name)
+        format!("{} [label=\"{}\"];", self.node_label(), name)
     }
 }
 

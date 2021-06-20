@@ -1,14 +1,19 @@
-use std::{env, error::Error, fs::File, io::prelude::*, rc::Rc};
+use std::{
+    env,
+    error::Error,
+    fs::File,
+    io::prelude::*,
+    process::{Command, Stdio},
+};
 
 use colored::*;
-use log::debug;
+use log::{debug, info, warn};
 use syn::Item;
 use undertaker::{
     async_detect::{async_in_block, AsyncCode},
     cfg::CFGBlock,
     context::Context,
     discover::creator_from_block,
-    graph::DepGraph,
     types::{parse_resource_file, Monomorphisable},
     uses,
 };
@@ -110,8 +115,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                     .flatten()
                     .collect();
                 assert_eq!(cfgs.len(), 2);
-                println!("{}", cfgs[0].dot_description());
-                println!("{}", cfgs[1].dot_description());
+                for (idx, cfg) in cfgs.iter().enumerate() {
+                    let path = format!("dot/cfg{}.pdf", idx);
+                    create_cfg_pdf(cfg, &path);
+                }
 
                 ctx.exit_block();
                 break;
@@ -120,4 +127,25 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     Ok(())
+}
+
+fn create_cfg_pdf(cfg: &CFGBlock<'_>, path: &str) {
+    let mut proc = Command::new("dot")
+        .args(&["-Tpdf", "-o", path])
+        .stdin(Stdio::piped())
+        .spawn()
+        .expect("failed to get dot command");
+    let dot_string = cfg.dot_description();
+    let mut stdin = proc.stdin.take().expect("failed to open stdin");
+    std::thread::spawn(move || {
+        stdin
+            .write_all(dot_string.as_bytes())
+            .expect("failed to write to stdin");
+    });
+    let exit = proc.wait().unwrap();
+    if exit.success() {
+        info!("Created DOT graph in {}", path);
+    } else {
+        warn!("Failed to create DOT graph");
+    }
 }
