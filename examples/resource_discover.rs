@@ -109,6 +109,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                     .filter(Option::is_some)
                     .flatten()
                     .collect();
+                assert_eq!(cfgs.len(), 2);
+                println!("{}", cfgs[0].dot_description());
+                println!("{}", cfgs[1].dot_description());
 
                 ctx.exit_block();
                 break;

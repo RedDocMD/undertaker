@@ -1,10 +1,12 @@
 use std::{
     cell::RefCell,
-    collections::VecDeque,
+    collections::{HashSet, VecDeque},
+    fmt::{self, Display, Formatter, Write},
     rc::{Rc, Weak},
 };
 
 use syn::{Block, Expr, Item, Pat, Stmt};
+use uuid::Uuid;
 
 type CFGNodeStrongPtr<'ast> = Rc<RefCell<CFGNode<'ast>>>;
 type CFGNodeWeakPtr<'ast> = Weak<RefCell<CFGNode<'ast>>>;
@@ -27,6 +29,7 @@ struct CFGNode<'ast> {
     expr: CFGExpr<'ast>,
     pred: Vec<CFGNodeWeakPtr<'ast>>,
     succ: Vec<CFGNodePtr<'ast>>,
+    uuid: Uuid,
 }
 
 impl<'ast> CFGNode<'ast> {
@@ -35,7 +38,114 @@ impl<'ast> CFGNode<'ast> {
             expr,
             pred: Vec::new(),
             succ: Vec::new(),
+            uuid: Uuid::new_v4(),
         }))
+    }
+
+    fn node_label(&self) -> String {
+        self.uuid.to_string()
+    }
+
+    fn node_info(&self) -> String {
+        let name = match self.expr {
+            CFGExpr::Expr(expr) => expr_name(expr),
+            CFGExpr::Item(item) => item_name(item),
+            CFGExpr::ForGuard(_, expr) => format!("for_guard: {}", expr_name(expr)),
+            CFGExpr::WhileGuard(expr) => format!("while_cond: {}", expr_name(expr)),
+            CFGExpr::IfGuard(expr) => format!("if_cond: {}", expr_name(expr)),
+            CFGExpr::Phantom => String::from("No-Op"),
+        };
+        format!("{}: [label=\"{}\"];", self.node_label(), name)
+    }
+}
+
+impl PartialEq for CFGNode<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.uuid == other.uuid
+    }
+}
+
+impl Eq for CFGNode<'_> {}
+
+fn expr_name(expr: &Expr) -> String {
+    String::from(match expr {
+        Expr::Array(_) => "array slice",
+        Expr::Assign(_) => "assign expr",
+        Expr::AssignOp(_) => "assign-op expr",
+        Expr::Async(_) => unreachable!("async block"),
+        Expr::Await(_) => "await expr",
+        Expr::Binary(_) => "binary-op expr",
+        Expr::Block(_) => unreachable!("block"),
+        Expr::Box(_) => "box expr",
+        Expr::Break(_) => "break",
+        Expr::Call(_) => "function call",
+        Expr::Cast(_) => "cast expr",
+        Expr::Closure(_) => "closure expr",
+        Expr::Continue(_) => "continue",
+        Expr::Field(_) => "field access",
+        Expr::ForLoop(_) => unreachable!("for loop"),
+        Expr::Group(_) => "group ??",
+        Expr::If(_) => unreachable!("if stmt"),
+        Expr::Index(_) => "index expr",
+        Expr::Let(_) => "let binding",
+        Expr::Lit(_) => "literal",
+        Expr::Loop(_) => unreachable!("loop"),
+        Expr::Macro(_) => "macro invocation",
+        Expr::Match(_) => "match expr",
+        Expr::MethodCall(_) => "method call",
+        Expr::Paren(_) => "parenthesized expr",
+        Expr::Path(_) => "path expr",
+        Expr::Range(_) => "range expr",
+        Expr::Reference(_) => "ref expr",
+        Expr::Repeat(_) => "repeat expr",
+        Expr::Return(_) => "return expr",
+        Expr::Struct(_) => "struct expr",
+        Expr::Try(_) => "try expr?",
+        Expr::TryBlock(_) => "try block?",
+        Expr::Tuple(_) => "tuple expr",
+        Expr::Type(_) => "type expr",
+        Expr::Unary(_) => "unary op expr",
+        Expr::Unsafe(_) => "unsafe expr",
+        Expr::Verbatim(_) => todo!("what is verbatim doing here?"),
+        Expr::While(_) => unreachable!("while loop"),
+        Expr::Yield(_) => "yield expr",
+        Expr::__TestExhaustive(_) => todo!("what is a __TestExhaustive?"),
+    })
+}
+
+fn item_name(item: &Item) -> String {
+    String::from(match item {
+        Item::Const(_) => "const decl",
+        Item::Enum(_) => "enum decl",
+        Item::ExternCrate(_) => "extern crate decl",
+        Item::Fn(_) => "function decl",
+        Item::ForeignMod(_) => "foreign mod",
+        Item::Impl(_) => "impl decl",
+        Item::Macro(_) => "macro decl",
+        Item::Macro2(_) => "macro2 decl",
+        Item::Mod(_) => "mod decl",
+        Item::Static(_) => "static decl",
+        Item::Struct(_) => "struct decl",
+        Item::Trait(_) => "trait decl",
+        Item::TraitAlias(_) => "trai alias decl",
+        Item::Type(_) => "type decl",
+        Item::Union(_) => "union decl",
+        Item::Use(_) => "use stmt",
+        Item::Verbatim(_) => todo!("what is a verbatim doing here?"),
+        Item::__TestExhaustive(_) => todo!("what is a __TestExhaustive?"),
+    })
+}
+
+impl Display for CFGExpr<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            CFGExpr::Expr(expr) => write!(f, "{}", expr_name(expr)),
+            CFGExpr::Item(_) => todo!(),
+            CFGExpr::ForGuard(_, _) => todo!(),
+            CFGExpr::WhileGuard(_) => todo!(),
+            CFGExpr::IfGuard(_) => todo!(),
+            CFGExpr::Phantom => todo!(),
+        }
     }
 }
 
@@ -217,5 +327,55 @@ impl<'ast> CFGBlock<'ast> {
                 tail: ptr,
             })
         }
+    }
+
+    pub fn dot_description(&self) -> String {
+        let mut node_desc = String::new();
+        let mut edge_desc = String::new();
+        let mut stack = Vec::new();
+        let mut done = HashSet::new();
+
+        stack.push(Rc::clone(&self.head));
+        while !stack.is_empty() {
+            let node = stack.pop().unwrap();
+            let node = node.as_ref().borrow();
+            if done.contains(&node.uuid) {
+                continue;
+            }
+            done.insert(node.uuid);
+
+            writeln!(&mut node_desc, "\t{}", node.node_info())
+                .expect("expected to be able write to string");
+
+            for s in &node.succ {
+                match s {
+                    CFGNodePtr::Strong(strong) => {
+                        writeln!(
+                            &mut edge_desc,
+                            "\t{} -> {};",
+                            node.node_label(),
+                            strong.as_ref().borrow().node_label()
+                        )
+                        .expect("expected to be able to write to string");
+                    }
+                    CFGNodePtr::Weak(weak) => {
+                        if let Some(weak) = Weak::upgrade(weak) {
+                            writeln!(
+                                &mut edge_desc,
+                                "\t{} -> {};",
+                                node.node_label(),
+                                weak.as_ref().borrow().node_label()
+                            )
+                            .expect("expected to be able to write to string");
+                        }
+                    }
+                }
+
+                if let CFGNodePtr::Strong(s) = s {
+                    stack.push(Rc::clone(s));
+                }
+            }
+        }
+        format!("digraph G {{\n{}{}}}\n", edge_desc, node_desc)
     }
 }
