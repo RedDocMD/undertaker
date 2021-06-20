@@ -3,6 +3,9 @@ use std::fmt;
 use std::fmt::Display;
 use std::fmt::Formatter;
 
+use syn::Expr;
+use uuid::Uuid;
+
 use crate::discover::Object;
 use crate::path;
 use crate::uses::{extend_path_once, UsePath};
@@ -12,6 +15,7 @@ type BlockUsePaths = Vec<UsePath>;
 pub struct Context {
     use_paths: Vec<BlockUsePaths>,
     env: Environment,
+    expr_uuid_store: ExprUuidStore,
 }
 
 fn prelude_paths() -> Vec<UsePath> {
@@ -55,24 +59,31 @@ fn prelude_paths() -> Vec<UsePath> {
     ]
 }
 
+impl Default for Context {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Context {
     pub fn new() -> Self {
-        let mut paths = Vec::new();
-        paths.push(prelude_paths()); // For the global scope
         Self {
-            use_paths: paths,
+            use_paths: vec![prelude_paths()],
             env: Environment::new(),
+            expr_uuid_store: ExprUuidStore::new(),
         }
     }
 
     pub fn enter_block(&mut self) {
         self.use_paths.push(Vec::new());
         self.env.enter_block();
+        self.expr_uuid_store.enter_block();
     }
 
     pub fn exit_block(&mut self) {
         self.use_paths.pop();
         self.env.exit_block();
+        self.expr_uuid_store.exit_block();
     }
 
     /// Adds paths to the current block.
@@ -92,12 +103,22 @@ impl Context {
         self.env.add_binding(id, ob);
     }
 
-    pub fn get_binding(&self, id: &String) -> Option<&Object> {
+    pub fn get_binding(&self, id: &str) -> Option<&Object> {
         self.env.get_binding(id)
     }
 
     pub fn tot_binding_cnt(&self) -> usize {
         self.env.tot_binding_cnt()
+    }
+
+    pub fn add_expr_uuid(&mut self, expr: Expr, idx: usize, uuid: Uuid) {
+        let idx_expr = IndexedExpr { expr, idx };
+        self.expr_uuid_store.add_binding(idx_expr, uuid);
+    }
+
+    pub fn get_expr_uuid(&self, expr: Expr, idx: usize) -> Option<&Uuid> {
+        let idx_expr = IndexedExpr { expr, idx };
+        self.expr_uuid_store.get_binding(&idx_expr)
     }
 }
 
@@ -174,9 +195,10 @@ struct BlockEnvironment {
 
 impl Environment {
     fn new() -> Self {
-        let mut block_envs = Vec::new();
-        block_envs.push(BlockEnvironment::new()); // For the global scope
-        Self { block_envs }
+        // For the global scope
+        Self {
+            block_envs: vec![BlockEnvironment::new()],
+        }
     }
 
     fn enter_block(&mut self) {
@@ -193,7 +215,7 @@ impl Environment {
         block.add_binding(id, ob);
     }
 
-    fn get_binding(&self, id: &String) -> Option<&Object> {
+    fn get_binding(&self, id: &str) -> Option<&Object> {
         for block in self.block_envs.iter().rev() {
             let binding = block.get_binding(id);
             if binding.is_some() {
@@ -215,8 +237,8 @@ impl Display for Environment {
         let mut padding = String::new();
         for block in &self.block_envs {
             padding += "  ";
-            for (_, ob) in &block.id_map {
-                write!(f, "{}{}\n", padding, ob)?;
+            for ob in block.id_map.values() {
+                writeln!(f, "{}{}", padding, ob)?;
             }
         }
         Ok(())
@@ -234,8 +256,64 @@ impl BlockEnvironment {
         self.id_map.insert(id, ob);
     }
 
-    fn get_binding(&self, id: &String) -> Option<&Object> {
+    fn get_binding(&self, id: &str) -> Option<&Object> {
         self.id_map.get(id)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+struct IndexedExpr {
+    expr: Expr,
+    idx: usize,
+}
+
+struct BlockUuidExprMap {
+    map: HashMap<IndexedExpr, Uuid>,
+}
+
+impl BlockUuidExprMap {
+    fn new() -> Self {
+        Self {
+            map: HashMap::new(),
+        }
+    }
+
+    fn add_binding(&mut self, indexed_expr: IndexedExpr, uuid: Uuid) {
+        self.map.insert(indexed_expr, uuid);
+    }
+
+    fn get_binding(&self, indexed_expr: &IndexedExpr) -> Option<&Uuid> {
+        self.map.get(indexed_expr)
+    }
+}
+
+struct ExprUuidStore {
+    store: Vec<BlockUuidExprMap>,
+}
+
+impl ExprUuidStore {
+    fn new() -> Self {
+        Self {
+            store: vec![BlockUuidExprMap::new()],
+        }
+    }
+
+    fn add_binding(&mut self, indexed_expr: IndexedExpr, uuid: Uuid) {
+        let map = self.store.last_mut().unwrap();
+        map.add_binding(indexed_expr, uuid);
+    }
+
+    fn get_binding(&self, indexed_expr: &IndexedExpr) -> Option<&Uuid> {
+        let map = self.store.last().unwrap();
+        map.get_binding(indexed_expr)
+    }
+
+    fn enter_block(&mut self) {
+        self.store.push(BlockUuidExprMap::new());
+    }
+
+    fn exit_block(&mut self) {
+        self.store.pop();
     }
 }
 

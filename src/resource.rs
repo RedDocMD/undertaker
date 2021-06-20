@@ -116,7 +116,7 @@ fn trim_common(id: &ResourceID, path: &UsePath) -> Option<ResourceID> {
                 let new_first = new_comps.first().unwrap();
                 if let UsePathComponent::Name(name) = new_first {
                     if name == from {
-                        let mut new_comps = new_comps.to_vec().clone();
+                        let mut new_comps = new_comps.to_vec();
                         new_comps[0] = UsePathComponent::Name(to.to_string());
                         return Some(UsePath::from(&new_comps));
                     }
@@ -290,50 +290,38 @@ pub fn resource_creation_from_block(
     let mut identifiers = Vec::new();
     for stmt in &block.stmts {
         use syn::Stmt::*;
-        match stmt {
-            Local(local) => {
-                if let Some(init) = &local.init {
-                    let creator = resource_creation_from_expr(init.1.as_ref(), &resource, ctxt);
-                    if let Some(creator) = creator {
-                        let pat = &local.pat;
-                        use Pat::*;
-                        match pat {
-                            Ident(pat) => {
-                                let ident = pat.ident.to_string();
-                                let ob = Object {
-                                    ident: ident.clone(),
-                                    resource: resource.clone(),
-                                };
-                                // ctxt.add_binding(ident.clone(), ob);
-                                identifiers.push(ident);
-                            }
-                            Tuple(pat) => {
-                                if let CreatorType::Tuple(TupleCreator { ret_idx, .. }) =
-                                    &creator.ctype
-                                {
-                                    let pat = pat.elems.iter().skip(*ret_idx).next().unwrap();
-                                    if let Ident(lit) = pat {
-                                        let ident = lit.ident.to_string();
-                                        let ob = Object {
-                                            ident: ident.clone(),
-                                            resource: resource.clone(),
-                                        };
-                                        // ctxt.add_binding(ident.clone(), ob);
-                                        identifiers.push(ident);
-                                    } else {
-                                        unreachable!("Did not expect anything other than a literal pattern here");
-                                    }
-                                } else {
-                                    unreachable!("Cannot be a tuple let and not a tuple creator");
-                                }
-                            }
-                            _ => {}
+        if let Local(local) = stmt {
+            if let Some(init) = &local.init {
+                let creator = resource_creation_from_expr(init.1.as_ref(), &resource, ctxt);
+                if let Some(creator) = creator {
+                    let pat = &local.pat;
+                    use Pat::*;
+                    match pat {
+                        Ident(pat) => {
+                            let ident = pat.ident.to_string();
+                            identifiers.push(ident);
                         }
+                        Tuple(pat) => {
+                            if let CreatorType::Tuple(TupleCreator { ret_idx, .. }) = &creator.ctype
+                            {
+                                let pat = pat.elems.iter().nth(*ret_idx).unwrap();
+                                if let Ident(lit) = pat {
+                                    let ident = lit.ident.to_string();
+                                    identifiers.push(ident);
+                                } else {
+                                    unreachable!(
+                                        "Did not expect anything other than a literal pattern here"
+                                    );
+                                }
+                            } else {
+                                unreachable!("Cannot be a tuple let and not a tuple creator");
+                            }
+                        }
+                        _ => {}
                     }
                 }
             }
-            _ => {}
-        };
+        }
     }
     identifiers
 }
@@ -348,32 +336,27 @@ pub fn resource_creation_from_expr<'res>(
         Call(expr) => {
             let trimmed_res = resource.single.trim_by_use_paths(ctxt.iter());
             // Check if the function call is appropriate.
-            match expr.func.as_ref() {
-                Path(path_expr) => {
-                    for (idx, creator) in trimmed_res.creators.iter().enumerate() {
-                        let id = match &creator.ctype {
-                            CreatorType::Direct(DirectCreator { id, .. }) => id,
-                            CreatorType::Tuple(TupleCreator { id, .. }) => id,
-                        };
-                        if creator.id_type != CreatorIdType::Function {
-                            continue;
-                        }
-                        if match_expr_path(id, &path_expr.path) {
-                            if let Some(rest) = &resource.rest {
-                                for arg in &expr.args {
-                                    if resource_creation_from_expr(arg, rest.as_ref(), ctxt)
-                                        .is_some()
-                                    {
-                                        return Some(&resource.single.creators[idx]);
-                                    }
+            if let Path(path_expr) = expr.func.as_ref() {
+                for (idx, creator) in trimmed_res.creators.iter().enumerate() {
+                    let id = match &creator.ctype {
+                        CreatorType::Direct(DirectCreator { id, .. }) => id,
+                        CreatorType::Tuple(TupleCreator { id, .. }) => id,
+                    };
+                    if creator.id_type != CreatorIdType::Function {
+                        continue;
+                    }
+                    if match_expr_path(id, &path_expr.path) {
+                        if let Some(rest) = &resource.rest {
+                            for arg in &expr.args {
+                                if resource_creation_from_expr(arg, rest.as_ref(), ctxt).is_some() {
+                                    return Some(&resource.single.creators[idx]);
                                 }
-                            } else {
-                                return Some(&resource.single.creators[idx]);
                             }
+                        } else {
+                            return Some(&resource.single.creators[idx]);
                         }
                     }
                 }
-                _ => {}
             }
             // Otherwise check the args
             // for arg in &expr.args {
@@ -402,21 +385,6 @@ pub fn resource_creation_from_expr<'res>(
                     }
                     _ => continue,
                 };
-                let recv_name = match expr.receiver.as_ref() {
-                    Path(path) => {
-                        let segments = &path.path.segments;
-                        if segments.len() != 1 {
-                            continue;
-                        }
-                        segments[0].ident.to_string()
-                    }
-                    _ => unimplemented!(),
-                };
-                if let Some(recv_ob) = ctxt.get_binding(&recv_name) {
-                    // if recv_ob.resource == *resource {
-                    //     return Some(creator);
-                    // }
-                }
             }
         }
         _ => {}

@@ -1,3 +1,4 @@
+use std::hash::Hash;
 use std::io::prelude::*;
 use std::{env, fs::File, process};
 
@@ -26,6 +27,28 @@ fn main() {
             }
         }
     }
+
+    let new_src = "
+fn foo() {
+    let (tx1, rx1) = oneshot::channel::<i64>();
+    let (tx1, rx1) = oneshot::channel::<i64>();
+}
+    ";
+    let ast = syn::parse_file(&new_src).unwrap();
+    let mut exprs = Vec::new();
+    for item in &ast.items {
+        if let Item::Fn(func) = item {
+            for stmt in &func.block.stmts {
+                if let Stmt::Local(stmt) = stmt {
+                    if let Some((_, expr)) = &stmt.init {
+                        exprs.push(expr.as_ref());
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(exprs.len(), 2);
+    assert_ne!(exprs[0], exprs[1]);
 }
 
 fn handle_main(func: &ItemFn) {

@@ -10,6 +10,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let notify_send = Arc::new(Notify::new());
     let empty_vec = Vec::new::<i64>();
+    let (tx2, mut rx2) = oneshot::channel::<i64>();
     let more_empty_vec = empty_vec.clone();
     let notify_recv = Arc::clone(&notify_send);
 

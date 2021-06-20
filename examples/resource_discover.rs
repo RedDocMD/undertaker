@@ -1,8 +1,17 @@
-use std::{env, error::Error, fs::File, io::prelude::*};
+use std::{
+    env,
+    error::Error,
+    fs::File,
+    io::prelude::*,
+    process::{Command, Stdio},
+};
 
 use colored::*;
+use log::{debug, info, warn};
 use syn::Item;
 use undertaker::{
+    async_detect::{async_in_block, AsyncCode},
+    cfg::CFGBlock,
     context::Context,
     discover::creator_from_block,
     types::{parse_resource_file, Monomorphisable},
@@ -11,7 +20,7 @@ use undertaker::{
 
 fn main() -> Result<(), Box<dyn Error>> {
     env_logger::builder()
-        .filter_level(log::LevelFilter::Debug)
+        .filter_level(log::LevelFilter::Info)
         .format(|buf, rec| {
             let line = rec
                 .line()
@@ -19,7 +28,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             let file = rec
                 .file()
                 .map_or(String::new(), |file| format!(" {}", file));
-            writeln!(buf, "[{}{}{}] {}", rec.level(), file, line, rec.args())
+            let prelude = format!("[{}{}{}]", rec.level(), file, line);
+            writeln!(buf, "{} {}", prelude.cyan(), rec.args())
         })
         .write_style(env_logger::WriteStyle::Always)
         .init();
@@ -49,20 +59,21 @@ fn main() -> Result<(), Box<dyn Error>> {
     for item in ast.items {
         if let Item::Fn(func) = item {
             let sig = &func.sig;
-            if sig.ident.to_string() == String::from("main") {
+            if sig.ident == "main" {
                 ctx.enter_block();
                 let block_uses = uses::extract_block_uses(func.block.as_ref());
                 ctx.add_use_paths(block_uses);
 
                 let mut binding_cnt = 0;
                 loop {
-                    for (_, res) in info.specializations() {
+                    for res in info.specializations().values() {
                         let gen_creators_map = info.gen_creators();
                         let creator_ids = &gen_creators_map[res.id()];
                         let gen_callables = info.gen_callables();
                         for creator_id in creator_ids {
                             let gen_creator = &gen_callables[creator_id];
                             let creator = gen_creator.monomorphise(res.type_map().clone()).unwrap();
+                            debug!("{}", creator.to_string().red());
                             creator_from_block(
                                 func.block.as_ref(),
                                 &creator,
@@ -80,6 +91,35 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
                 }
                 println!("\n{}:\n{}", "Context".yellow(), ctx);
+                let blocks = async_in_block(&func.block);
+                println!("Found {} blocks", blocks.len().to_string().yellow());
+
+                // let dep_graphs: Vec<Rc<DepGraph>> = blocks
+                //     .into_iter()
+                //     .map(|code| match code {
+                //         AsyncCode::Block(block) => DepGraph::from_block(&block.block),
+                //         AsyncCode::Closure(closure) => DepGraph::from_expr(*closure.body),
+                //     })
+                //     .collect();
+                // println!("\n{}", "DepGraphs:".cyan());
+                // for dep_graph in &dep_graphs {
+                //     println!("{}", dep_graph);
+                // }
+                let cfgs: Vec<CFGBlock<'_>> = blocks
+                    .iter()
+                    .map(|code| match code {
+                        AsyncCode::Block(block) => CFGBlock::from_block(&block.block),
+                        AsyncCode::Closure(closure) => CFGBlock::from_expr(closure.body.as_ref()),
+                    })
+                    .filter(Option::is_some)
+                    .flatten()
+                    .collect();
+                assert_eq!(cfgs.len(), 2);
+                for (idx, cfg) in cfgs.iter().enumerate() {
+                    let path = format!("dot/cfg{}.pdf", idx);
+                    create_cfg_pdf(cfg, &path);
+                }
+
                 ctx.exit_block();
                 break;
             }
@@ -87,4 +127,25 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     Ok(())
+}
+
+fn create_cfg_pdf(cfg: &CFGBlock<'_>, path: &str) {
+    let mut proc = Command::new("dot")
+        .args(&["-Tpdf", "-o", path])
+        .stdin(Stdio::piped())
+        .spawn()
+        .expect("failed to get dot command");
+    let dot_string = cfg.dot_description();
+    let mut stdin = proc.stdin.take().expect("failed to open stdin");
+    std::thread::spawn(move || {
+        stdin
+            .write_all(dot_string.as_bytes())
+            .expect("failed to write to stdin");
+    });
+    let exit = proc.wait().unwrap();
+    if exit.success() {
+        info!("Created DOT graph in {}", path);
+    } else {
+        warn!("Failed to create DOT graph");
+    }
 }

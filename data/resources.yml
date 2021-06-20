@@ -44,6 +44,10 @@ callables:
           name: Vec
           type_params:
             - V
+      prop:
+        type: DontCare
+      async: false
+
   - Arc_new:
       id: std::sync::Arc::new
       type_params:
@@ -57,6 +61,11 @@ callables:
           name: Arc
           type_params:
             - T
+      prop:
+        type: Copy
+        idx: 1
+      async: false
+
   - Arc_clone:
       id: std::sync::Arc::clone
       type_params:
@@ -72,6 +81,10 @@ callables:
           name: Arc
           type_params:
             - T
+      prop:
+        type: Copy
+        idx: 1
+      async: false
 
   - Notify_new:
       id: tokio::sync::Notify::new
@@ -82,6 +95,9 @@ callables:
         - cat: Res
           name: Notify
           type_params: []
+      prop:
+        type: NoCopy
+      async: false
 
   - Vec_new:
       id: std::vec::Vec::new
@@ -94,6 +110,9 @@ callables:
           name: Vec
           type_params:
             - T
+      prop:
+        type: NoCopy
+      async: false
 
   - Vec_clone:
       id: std::vec::Vec::clone
@@ -106,6 +125,9 @@ callables:
           name: Vec
           type_params:
             - T
+      prop:
+        type: NoCopy
+      async: false
 
   - oneshot_channel:
       id: tokio::sync::oneshot::channel
@@ -124,6 +146,55 @@ callables:
               name: oneshot_recv
               type_params:
                 - T
+      prop:
+        type: NoCopy
+      async: false
+
+  - oneshot_send:
+      id: tokio::sync::oneshot::Sender::send
+      type_params:
+        - T
+      ctype: Method
+      args:
+        - cat: Type
+          type_param: T
+      ret: []
+      prop:
+        type: DontCare
+      async: false
+
+  - oneshot_try_recv:
+      id: tokio::sync::oneshot::Receiver::try_recv
+      type_params:
+        - T
+      ctype: Method
+      args: []
+      ret:
+        - cat: Type
+          type_param: T
+      prop:
+        type: DontCare
+      async: false
+
+  - Notify_notify_one:
+      id: tokio::sync::Notify::notify_one
+      type_params: []
+      ctype: Method
+      args: []
+      ret: []
+      prop:
+        type: DontCare
+      async: false
+
+  - Notify_notified:
+      id: tokio::sync::Notify::notified
+      type_params: []
+      ctype: Method
+      args: []
+      ret: []
+      prop:
+        type: DontCare
+      async: true
 
 creators:
   - Arc:
