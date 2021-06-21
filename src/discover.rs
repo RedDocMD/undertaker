@@ -83,7 +83,19 @@ pub fn callable_from_expr(
                     if let Some(Return::NonVoid(Arg::Res(reciever_res))) =
                         get_expr_type(expr.receiver.as_ref(), ctx, info)
                     {
-                        if reciever_res.id() == &base_res_id {
+                        let id = if reciever_res.is_deref() {
+                            let type_map = reciever_res.type_map();
+                            if type_map.len() != 1 {
+                                todo!(
+                                    "yet to handle deref trait for types with {} type params",
+                                    type_map.len()
+                                );
+                            }
+                            type_map.values().next().unwrap().id()
+                        } else {
+                            reciever_res.id()
+                        };
+                        if id == &base_res_id {
                             let mut args_and_types = expr.args.iter().zip(callable.args().iter());
                             let args_valid = args_and_types.all(|(expr, res)| {
                                 if let Some(expr_res) = get_expr_type(expr, ctx, info) {

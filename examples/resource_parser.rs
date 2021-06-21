@@ -30,6 +30,19 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         println!();
     }
+    println!("\n{}", "Generic Blockers:".yellow());
+    for (res, blockers) in info.gen_blockers() {
+        let res = &info.gen_resources()[res];
+        print!("{} => ", res);
+        for (idx, blocker) in blockers.iter().enumerate() {
+            let blocker = &info.gen_callables()[blocker];
+            print!("{}", blocker);
+            if idx != blockers.len() - 1 {
+                print!(", ");
+            }
+        }
+        println!();
+    }
     println!("\n{}", "Resources:".yellow());
     for (name, res) in info.specializations() {
         println!("{} => {}", name, res);

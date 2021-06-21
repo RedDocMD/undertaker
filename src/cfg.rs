@@ -44,7 +44,7 @@ impl<'ast> CFGNode<'ast> {
 
     fn node_label(&self) -> String {
         let simp = self.uuid.to_simple_ref();
-        let mut buf = [0 as u8; SimpleRef::LENGTH];
+        let mut buf = [0_u8; SimpleRef::LENGTH];
         let rep = String::from(simp.encode_lower(&mut buf));
         String::from("n") + &rep
     }
