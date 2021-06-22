@@ -8,10 +8,10 @@ use std::{
 use syn::{Block, Expr, Item, Pat, Stmt};
 use uuid::{adapter::SimpleRef, Uuid};
 
-type CFGNodeStrongPtr<'ast> = Rc<RefCell<CFGNode<'ast>>>;
-type CFGNodeWeakPtr<'ast> = Weak<RefCell<CFGNode<'ast>>>;
+pub type CFGNodeStrongPtr<'ast> = Rc<RefCell<CFGNode<'ast>>>;
+pub type CFGNodeWeakPtr<'ast> = Weak<RefCell<CFGNode<'ast>>>;
 
-enum CFGExpr<'ast> {
+pub enum CFGExpr<'ast> {
     Expr(&'ast Expr),
     Item(&'ast Item),
     ForGuard(&'ast Pat, &'ast Expr),
@@ -20,12 +20,12 @@ enum CFGExpr<'ast> {
     Phantom,
 }
 
-enum CFGNodePtr<'ast> {
+pub enum CFGNodePtr<'ast> {
     Strong(CFGNodeStrongPtr<'ast>),
     Weak(CFGNodeWeakPtr<'ast>),
 }
 
-struct CFGNode<'ast> {
+pub struct CFGNode<'ast> {
     expr: CFGExpr<'ast>,
     pred: Vec<CFGNodeWeakPtr<'ast>>,
     succ: Vec<CFGNodePtr<'ast>>,
@@ -59,6 +59,16 @@ impl<'ast> CFGNode<'ast> {
             CFGExpr::Phantom => String::from("No-Op"),
         };
         format!("{} [label=\"{}\"];", self.node_label(), name)
+    }
+
+    pub fn succ(&self) -> &[CFGNodePtr<'ast>] {
+        self.succ.as_slice()
+    }
+}
+
+impl CFGNode<'_> {
+    pub fn expr(&self) -> &CFGExpr<'_> {
+        &self.expr
     }
 }
 
@@ -158,6 +168,14 @@ pub struct CFGBlock<'ast> {
 }
 
 impl<'ast> CFGBlock<'ast> {
+    pub fn head(&self) -> &CFGNodeStrongPtr<'ast> {
+        &self.head
+    }
+
+    pub fn tail(&self) -> &CFGNodeStrongPtr<'ast> {
+        &self.tail
+    }
+
     fn from_stmt(stmt: &'ast Stmt) -> Option<CFGBlock<'ast>> {
         match stmt {
             Stmt::Local(local) => local

@@ -20,7 +20,7 @@ resources:
         - K
         - V
   - oneshot_recv:
-      id: tokio::sync::oneshot::Reciever
+      id: tokio::sync::oneshot::Receiver
       is_deref: false
       type_params:
         - T
@@ -272,7 +272,7 @@ specialize:
             res: i64
             type_map: []
 
-  - oneshot::Reciever<i64>:
+  - oneshot::Receiver<i64>:
       res: oneshot_recv
       type_map:
         - T:

@@ -93,9 +93,12 @@ pub fn callable_from_expr(
                             }
                             type_map.values().next().unwrap().id()
                         } else {
+                            trace!("not deref");
                             reciever_res.id()
                         };
+                        trace!("-- {:?} {:?} --", id, base_res_id);
                         if id == &base_res_id {
+                            trace!("ok reciver");
                             let mut args_and_types = expr.args.iter().zip(callable.args().iter());
                             let args_valid = args_and_types.all(|(expr, res)| {
                                 if let Some(expr_res) = get_expr_type(expr, ctx, info) {
@@ -112,6 +115,29 @@ pub fn callable_from_expr(
                     }
                 }
             }
+        }
+        Expr::Assign(expr) => {
+            if callable_from_expr(expr.left.as_ref(), callable, ctx, info) {
+                return true;
+            }
+            if callable_from_expr(expr.right.as_ref(), callable, ctx, info) {
+                return true;
+            }
+        }
+        Expr::AssignOp(expr) => {
+            if callable_from_expr(expr.left.as_ref(), callable, ctx, info) {
+                return true;
+            }
+            if callable_from_expr(expr.right.as_ref(), callable, ctx, info) {
+                return true;
+            }
+        }
+        Expr::Await(expr) => {
+            return callable_from_expr(expr.base.as_ref(), callable, ctx, info);
+        }
+        Expr::Let(expr) => {
+            trace!("let expr");
+            return callable_from_expr(expr.expr.as_ref(), callable, ctx, info);
         }
         _ => debug!("ignored"),
     }

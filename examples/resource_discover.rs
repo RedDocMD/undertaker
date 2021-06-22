@@ -1,9 +1,11 @@
 use std::{
+    collections::HashMap,
     env,
     error::Error,
     fs::File,
     io::prelude::*,
     process::{Command, Stdio},
+    rc::Rc,
 };
 
 use colored::*;
@@ -11,16 +13,15 @@ use log::{debug, info, warn};
 use syn::Item;
 use undertaker::{
     async_detect::{async_in_block, AsyncCode},
-    cfg::CFGBlock,
+    cfg::{CFGBlock, CFGNodePtr},
     context::Context,
-    discover::creator_from_block,
-    types::{parse_resource_file, Monomorphisable},
+    discover::{callable_from_expr, creator_from_block},
+    types::{parse_resource_file, Callable, Monomorphisable, ResourceFile},
     uses,
 };
 
 fn main() -> Result<(), Box<dyn Error>> {
     env_logger::builder()
-        .filter_level(log::LevelFilter::Info)
         .format(|buf, rec| {
             let line = rec
                 .line()
@@ -120,6 +121,29 @@ fn main() -> Result<(), Box<dyn Error>> {
                     create_cfg_pdf(cfg, &path);
                 }
 
+                let gen_callables = info.gen_callables();
+                for gen_blockers in info.gen_blockers().values() {
+                    for gen_blocker in gen_blockers {
+                        let gen_blocker = &gen_callables[gen_blocker];
+                        debug!("Gen blocker: {}", gen_blocker);
+                        for res in info.specializations().values() {
+                            if let Some(blocker) = gen_blocker.monomorphise(res.type_map().clone())
+                            {
+                                debug!("Trying blocker {}", blocker);
+                                for cfg in &cfgs {
+                                    callable_from_cfg(cfg, &blocker, &ctx, &info);
+                                }
+                            }
+                        }
+                        if let Some(blocker) = gen_blocker.monomorphise(HashMap::new()) {
+                            debug!("Trying blocker {}", blocker);
+                            for cfg in &cfgs {
+                                callable_from_cfg(cfg, &blocker, &ctx, &info);
+                            }
+                        }
+                    }
+                }
+
                 ctx.exit_block();
                 break;
             }
@@ -147,5 +171,28 @@ fn create_cfg_pdf(cfg: &CFGBlock<'_>, path: &str) {
         info!("Created DOT graph in {}", path);
     } else {
         warn!("Failed to create DOT graph");
+    }
+}
+
+fn callable_from_cfg(cfg: &CFGBlock<'_>, callable: &Callable, ctx: &Context, info: &ResourceFile) {
+    let mut stack = Vec::new();
+    stack.push(Rc::clone(cfg.head()));
+    while !stack.is_empty() {
+        let node = stack.pop().unwrap();
+        let node = node.borrow();
+        for succ in node.succ() {
+            if let CFGNodePtr::Strong(succ) = succ {
+                stack.push(Rc::clone(succ));
+            }
+        }
+        let expr = match node.expr() {
+            undertaker::cfg::CFGExpr::Expr(expr) => *expr,
+            undertaker::cfg::CFGExpr::Item(_) => continue,
+            undertaker::cfg::CFGExpr::ForGuard(_, expr) => *expr,
+            undertaker::cfg::CFGExpr::WhileGuard(expr) => *expr,
+            undertaker::cfg::CFGExpr::IfGuard(expr) => *expr,
+            undertaker::cfg::CFGExpr::Phantom => continue,
+        };
+        if callable_from_expr(expr, callable, ctx, info) {}
     }
 }
