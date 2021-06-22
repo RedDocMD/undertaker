@@ -11,7 +11,10 @@ use std::{
 use linked_hash_map::LinkedHashMap;
 use yaml_rust::{Yaml, YamlLoader};
 
-use crate::uses::{self, UsePath, UsePathComponent};
+use crate::{
+    uses::{self, UsePath, UsePathComponent},
+    utils::specialize_callable,
+};
 
 pub type ResourceID = UsePath;
 
@@ -205,6 +208,12 @@ pub struct GenericCallable {
     ret: GenericReturn,
     prop: UUIDPropagation,
     is_async: bool,
+}
+
+impl GenericCallable {
+    pub fn id(&self) -> &ResourceID {
+        &self.id
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
@@ -528,18 +537,13 @@ pub struct ResourceFile {
 }
 
 impl ResourceFile {
-    fn create_callables(&mut self) {
-        self.specialize_creators();
-    }
-
-    fn specialize_creators(&mut self) {
-        for spec in self.specializations.values() {
-            generate_creators_of_resource(
-                spec,
-                &self.gen_creators,
-                &self.gen_callables,
-                &mut self.callables,
-            );
+    fn generate_callables(&mut self) {
+        for gen_callable in self.gen_callables.values() {
+            for res in self.specializations.values() {
+                if let Some(callable) = specialize_callable(gen_callable, res) {
+                    self.callables.insert(callable);
+                }
+            }
         }
     }
 
@@ -565,26 +569,6 @@ impl ResourceFile {
 
     pub fn gen_resources(&self) -> &HashMap<ResourceID, GenericResource> {
         &self.gen_resources
-    }
-}
-
-fn generate_creators_of_resource(
-    resource: &Resource,
-    gen_creators: &HashMap<ResourceID, Vec<ResourceID>>,
-    gen_callables: &HashMap<ResourceID, GenericCallable>,
-    callables: &mut HashSet<Callable>,
-) {
-    if let Some(spec_gen_creators) = gen_creators.get(&resource.id) {
-        for gen_creator_id in spec_gen_creators {
-            if let Some(gen_creator) = gen_callables.get(gen_creator_id) {
-                if let Some(creator) = gen_creator.monomorphise(resource.type_map.clone()) {
-                    callables.insert(creator);
-                }
-            }
-        }
-        for res in resource.type_map.values() {
-            generate_creators_of_resource(res, gen_creators, gen_callables, callables);
-        }
     }
 }
 
@@ -681,7 +665,7 @@ pub fn parse_resource_file<T: AsRef<path::Path>>(
         specializations,
         callables: HashSet::new(),
     };
-    info.create_callables();
+    info.generate_callables();
 
     Ok(info)
 }

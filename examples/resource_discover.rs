@@ -121,24 +121,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                     create_cfg_pdf(cfg, &path);
                 }
 
-                let gen_callables = info.gen_callables();
                 for gen_blockers in info.gen_blockers().values() {
                     for gen_blocker in gen_blockers {
-                        let gen_blocker = &gen_callables[gen_blocker];
-                        debug!("Gen blocker: {}", gen_blocker);
-                        for res in info.specializations().values() {
-                            if let Some(blocker) = gen_blocker.monomorphise(res.type_map().clone())
-                            {
-                                debug!("Trying blocker {}", blocker);
+                        for callable in info.callables() {
+                            if callable.id() == gen_blocker {
+                                debug!("Trying blocker {}", callable);
                                 for cfg in &cfgs {
-                                    callable_from_cfg(cfg, &blocker, &ctx, &info);
+                                    callable_from_cfg(cfg, &callable, &ctx, &info);
                                 }
-                            }
-                        }
-                        if let Some(blocker) = gen_blocker.monomorphise(HashMap::new()) {
-                            debug!("Trying blocker {}", blocker);
-                            for cfg in &cfgs {
-                                callable_from_cfg(cfg, &blocker, &ctx, &info);
                             }
                         }
                     }
