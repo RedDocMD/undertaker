@@ -1,6 +1,6 @@
 use std::fmt::{self, Display, Formatter};
 
-use syn::{Block, Expr, Pat, Path, Stmt};
+use syn::{Block, Expr, Lit, Pat, Path, Stmt};
 
 use log::{debug, info, trace, warn};
 use uuid::Uuid;
@@ -387,6 +387,39 @@ fn get_expr_type(expr: &Expr, ctx: &Context, info: &ResourceFile) -> Option<Retu
                         }
                     }
                 }
+            }
+        }
+        Expr::Lit(expr) => {
+            let primitives = ctx.primitives();
+            match &expr.lit {
+                Lit::Str(_) => return Some(Return::NonVoid(Arg::Res(primitives["str"].clone()))),
+                Lit::ByteStr(_) => todo!("cannot handle byte-str"),
+                Lit::Byte(_) => return Some(Return::NonVoid(Arg::Res(primitives["u8"].clone()))),
+                Lit::Char(_) => return Some(Return::NonVoid(Arg::Res(primitives["char"].clone()))),
+                Lit::Int(lit) => match lit.suffix() {
+                    "u8" => return Some(Return::NonVoid(Arg::Res(primitives["u8"].clone()))),
+                    "u16" => return Some(Return::NonVoid(Arg::Res(primitives["u16"].clone()))),
+                    "u32" => return Some(Return::NonVoid(Arg::Res(primitives["u32"].clone()))),
+                    "u64" => return Some(Return::NonVoid(Arg::Res(primitives["u64"].clone()))),
+                    "u128" => return Some(Return::NonVoid(Arg::Res(primitives["u128"].clone()))),
+                    "usize" => return Some(Return::NonVoid(Arg::Res(primitives["usize"].clone()))),
+                    "i8" => return Some(Return::NonVoid(Arg::Res(primitives["i8"].clone()))),
+                    "i16" => return Some(Return::NonVoid(Arg::Res(primitives["i16"].clone()))),
+                    "i32" => return Some(Return::NonVoid(Arg::Res(primitives["i32"].clone()))),
+                    "i64" => return Some(Return::NonVoid(Arg::Res(primitives["i64"].clone()))),
+                    "i128" => return Some(Return::NonVoid(Arg::Res(primitives["i128"].clone()))),
+                    "isize" => return Some(Return::NonVoid(Arg::Res(primitives["isize"].clone()))),
+                    "" => return Some(Return::NonVoid(Arg::Res(primitives["integral"].clone()))),
+                    _ => unreachable!("invalid int suffix: \"{}\"", lit.suffix()),
+                },
+                Lit::Float(lit) => match lit.suffix() {
+                    "f32" => return Some(Return::NonVoid(Arg::Res(primitives["f32"].clone()))),
+                    "f64" => return Some(Return::NonVoid(Arg::Res(primitives["f64"].clone()))),
+                    "" => return Some(Return::NonVoid(Arg::Res(primitives["floating"].clone()))),
+                    _ => unreachable!("invalid float suffix: \"{}\""),
+                },
+                Lit::Bool(_) => return Some(Return::NonVoid(Arg::Res(primitives["bool"].clone()))),
+                Lit::Verbatim(_) => todo!("what is verbatim doing here"),
             }
         }
         _ => {}

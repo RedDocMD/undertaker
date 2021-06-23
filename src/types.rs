@@ -103,6 +103,16 @@ impl Hash for GenericResource {
 
 impl PartialEq for Resource {
     fn eq(&self, other: &Self) -> bool {
+        if self.is_integral() && other.is_integral() {
+            if self.to_string() == "integral" || other.to_string() == "integral" {
+                return true;
+            }
+        }
+        if self.is_floating() && other.is_floating() {
+            if self.to_string() == "floating" || other.to_string() == "floating" {
+                return true;
+            }
+        }
         self.id == other.id && self.type_map == other.type_map
     }
 }
@@ -176,6 +186,28 @@ impl Resource {
 
     pub fn is_deref(&self) -> bool {
         self.is_deref
+    }
+
+    fn is_integral(&self) -> bool {
+        let disp = self.to_string();
+        disp == "u8"
+            || disp == "u16"
+            || disp == "u32"
+            || disp == "u64"
+            || disp == "u128"
+            || disp == "i8"
+            || disp == "i16"
+            || disp == "i32"
+            || disp == "i64"
+            || disp == "i128"
+            || disp == "usize"
+            || disp == "isize"
+            || disp == "integral"
+    }
+
+    fn is_floating(&self) -> bool {
+        let disp = self.to_string();
+        disp == "f32" || disp == "f64" || disp == "floating"
     }
 }
 
@@ -512,11 +544,12 @@ impl Display for Return {
     }
 }
 
-fn primitive_types_as_resources() -> HashMap<String, GenericResource> {
+pub fn primitive_types_as_resources() -> HashMap<String, GenericResource> {
     let types = vec![
         "bool", "u8", "u16", "u32", "u64", "u128", "i8", "i16", "i32", "i64", "i128", "f32", "f64",
-        "usize", "isize", "char", "str",
+        "usize", "isize", "char", "str", "integral", "floating",
     ];
+    // The last two aren't real types - placeholder types for integral and floating literals.
 
     types
         .iter()
