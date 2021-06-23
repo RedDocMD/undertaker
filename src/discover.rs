@@ -44,6 +44,7 @@ pub fn callable_from_expr(
     ctx: &Context,
     info: &ResourceFile,
 ) -> bool {
+    // Precondition: If there are nested method calls, outermost one is the right one
     let trimmed_id = trim_id_by_ctxt(callable.id(), ctx);
     match expr {
         Expr::Call(expr) => {
@@ -393,6 +394,7 @@ fn get_expr_type(expr: &Expr, ctx: &Context, info: &ResourceFile) -> Option<Retu
     None
 }
 
+#[derive(Clone)]
 pub struct Object {
     name: String,
     res: Resource,
@@ -406,6 +408,10 @@ impl Object {
             res,
             internal_uuid,
         }
+    }
+
+    pub fn internal_uuid(&self) -> Uuid {
+        self.internal_uuid
     }
 }
 

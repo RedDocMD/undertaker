@@ -10,15 +10,16 @@ use std::{
 
 use colored::*;
 use log::{debug, info, warn};
-use syn::Item;
+use syn::{Expr, Item};
 use undertaker::{
     async_detect::{async_in_block, AsyncCode},
-    cfg::{CFGBlock, CFGNodePtr},
+    cfg::{CFGBlock, CFGNodePtr, CFGNodeStrongPtr},
     context::Context,
-    discover::{callable_from_expr, creator_from_block},
-    types::{parse_resource_file, Callable, Monomorphisable, ResourceFile},
+    discover::{callable_from_expr, creator_from_block, Object},
+    types::{parse_resource_file, Callable, CallableType, Monomorphisable, ResourceFile},
     uses,
 };
+use uuid::Uuid;
 
 fn main() -> Result<(), Box<dyn Error>> {
     env_logger::builder()
@@ -121,13 +122,16 @@ fn main() -> Result<(), Box<dyn Error>> {
                     create_cfg_pdf(cfg, &path);
                 }
 
+                let mut cfg_blockers = Vec::new();
+
                 for gen_blockers in info.gen_blockers().values() {
                     for gen_blocker in gen_blockers {
                         for callable in info.callables() {
                             if callable.id() == gen_blocker {
                                 debug!("Trying blocker {}", callable);
                                 for cfg in &cfgs {
-                                    callable_from_cfg(cfg, &callable, &ctx, &info);
+                                    let obs = callable_from_cfg(cfg, &callable, &ctx, &info);
+                                    cfg_blockers.push(obs);
                                 }
                             }
                         }
@@ -164,11 +168,18 @@ fn create_cfg_pdf(cfg: &CFGBlock<'_>, path: &str) {
     }
 }
 
-fn callable_from_cfg(cfg: &CFGBlock<'_>, callable: &Callable, ctx: &Context, info: &ResourceFile) {
+fn callable_from_cfg<'ast>(
+    cfg: &CFGBlock<'ast>,
+    callable: &Callable,
+    ctx: &Context,
+    info: &ResourceFile,
+) -> HashMap<Uuid, Vec<(Object, CFGNodeStrongPtr<'ast>)>> {
     let mut stack = Vec::new();
     stack.push(Rc::clone(cfg.head()));
+    let mut calls: HashMap<Uuid, Vec<(Object, CFGNodeStrongPtr<'ast>)>> = HashMap::new();
     while !stack.is_empty() {
         let node = stack.pop().unwrap();
+        let node_cpy = Rc::clone(&node);
         let node = node.borrow();
         for succ in node.succ() {
             if let CFGNodePtr::Strong(succ) = succ {
@@ -183,6 +194,71 @@ fn callable_from_cfg(cfg: &CFGBlock<'_>, callable: &Callable, ctx: &Context, inf
             undertaker::cfg::CFGExpr::IfGuard(expr) => *expr,
             undertaker::cfg::CFGExpr::Phantom => continue,
         };
-        if callable_from_expr(expr, callable, ctx, info) {}
+        if callable_from_expr(expr, callable, ctx, info) {
+            let ob = object_from_call(expr, callable, ctx).expect("expected to find object here");
+            let uuid = ob.internal_uuid();
+            if calls.contains_key(&uuid) {
+                let obs = calls.get_mut(&uuid).unwrap();
+                obs.push((ob, node_cpy));
+            } else {
+                calls.insert(uuid, vec![(ob, node_cpy)]);
+            }
+        }
+    }
+    calls
+}
+
+fn object_from_call(expr: &Expr, callable: &Callable, ctx: &Context) -> Option<Object> {
+    // Precondition: expr actually contains a call to callable.
+    // Precondition: callable is a method.
+    // Precondition: If there are nested method calls, outermost one is the right one
+    // Precondition: There is only one method call
+    if callable.ctype() != CallableType::Method {
+        todo!("object_from_call only supports method calls");
+    }
+    match expr {
+        Expr::Assign(expr) => {
+            let ob = object_from_call(expr.left.as_ref(), callable, ctx);
+            if ob.is_some() {
+                return ob;
+            } else {
+                return object_from_call(expr.right.as_ref(), callable, ctx);
+            }
+        }
+        Expr::AssignOp(expr) => {
+            let ob = object_from_call(expr.left.as_ref(), callable, ctx);
+            if ob.is_some() {
+                ob
+            } else {
+                object_from_call(expr.right.as_ref(), callable, ctx)
+            }
+        }
+        Expr::Await(expr) => object_from_call(expr.base.as_ref(), callable, ctx),
+        Expr::Let(expr) => object_from_call(expr.expr.as_ref(), callable, ctx),
+        Expr::MethodCall(expr) => {
+            let reciever = expr.receiver.as_ref();
+            let receiver = match reciever {
+                Expr::Path(_) => reciever,
+                Expr::Reference(expr) => expr.expr.as_ref(),
+                _ => todo!("Supports only direct method calls"),
+            };
+            if let Expr::Path(expr) = receiver {
+                let segments: Vec<String> = expr
+                    .path
+                    .segments
+                    .iter()
+                    .map(|seg| seg.ident.to_string())
+                    .collect();
+                if segments.len() == 1 {
+                    let name = &segments[0];
+                    ctx.get_binding(name).cloned()
+                } else {
+                    todo!("only support literal names")
+                }
+            } else {
+                todo!("Supports only direct method calls")
+            }
+        }
+        _ => None,
     }
 }
