@@ -8,10 +8,10 @@ use std::{
 use syn::{Block, Expr, Item, Pat, Stmt};
 use uuid::{adapter::SimpleRef, Uuid};
 
-type CFGNodeStrongPtr<'ast> = Rc<RefCell<CFGNode<'ast>>>;
-type CFGNodeWeakPtr<'ast> = Weak<RefCell<CFGNode<'ast>>>;
+pub type CFGNodeStrongPtr<'ast> = Rc<RefCell<CFGNode<'ast>>>;
+pub type CFGNodeWeakPtr<'ast> = Weak<RefCell<CFGNode<'ast>>>;
 
-enum CFGExpr<'ast> {
+pub enum CFGExpr<'ast> {
     Expr(&'ast Expr),
     Item(&'ast Item),
     ForGuard(&'ast Pat, &'ast Expr),
@@ -20,15 +20,16 @@ enum CFGExpr<'ast> {
     Phantom,
 }
 
-enum CFGNodePtr<'ast> {
+pub enum CFGNodePtr<'ast> {
     Strong(CFGNodeStrongPtr<'ast>),
     Weak(CFGNodeWeakPtr<'ast>),
 }
 
-struct CFGNode<'ast> {
+pub struct CFGNode<'ast> {
     expr: CFGExpr<'ast>,
     pred: Vec<CFGNodeWeakPtr<'ast>>,
     succ: Vec<CFGNodePtr<'ast>>,
+    deps: Vec<CFGNodeWeakPtr<'ast>>,
     uuid: Uuid,
 }
 
@@ -38,13 +39,14 @@ impl<'ast> CFGNode<'ast> {
             expr,
             pred: Vec::new(),
             succ: Vec::new(),
+            deps: Vec::new(),
             uuid: Uuid::new_v4(),
         }))
     }
 
     fn node_label(&self) -> String {
         let simp = self.uuid.to_simple_ref();
-        let mut buf = [0 as u8; SimpleRef::LENGTH];
+        let mut buf = [0_u8; SimpleRef::LENGTH];
         let rep = String::from(simp.encode_lower(&mut buf));
         String::from("n") + &rep
     }
@@ -59,6 +61,28 @@ impl<'ast> CFGNode<'ast> {
             CFGExpr::Phantom => String::from("No-Op"),
         };
         format!("{} [label=\"{}\"];", self.node_label(), name)
+    }
+
+    pub fn succ(&self) -> &[CFGNodePtr<'ast>] {
+        self.succ.as_slice()
+    }
+
+    pub fn deps(&self) -> &[CFGNodeWeakPtr<'ast>] {
+        self.deps.as_slice()
+    }
+
+    pub fn add_dep(&mut self, dep: CFGNodeWeakPtr<'ast>) {
+        self.deps.push(dep);
+    }
+
+    pub fn uuid(&self) -> Uuid {
+        self.uuid
+    }
+}
+
+impl CFGNode<'_> {
+    pub fn expr(&self) -> &CFGExpr<'_> {
+        &self.expr
     }
 }
 
@@ -158,6 +182,14 @@ pub struct CFGBlock<'ast> {
 }
 
 impl<'ast> CFGBlock<'ast> {
+    pub fn head(&self) -> &CFGNodeStrongPtr<'ast> {
+        &self.head
+    }
+
+    pub fn tail(&self) -> &CFGNodeStrongPtr<'ast> {
+        &self.tail
+    }
+
     fn from_stmt(stmt: &'ast Stmt) -> Option<CFGBlock<'ast>> {
         match stmt {
             Stmt::Local(local) => local

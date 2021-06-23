@@ -1,31 +1,44 @@
 resources:
   - Arc:
       id: std::sync::Arc
+      is_deref: true
       type_params:
         - T
   - Notify:
       id: tokio::sync::Notify
+      is_deref: false
       type_params: []
   - Vec:
       id: std::vec::Vec
+      is_deref: false
       type_params:
         - T
   - HashMap:
       id: std::collections::HashMap
+      is_deref: false
       type_params:
         - K
         - V
   - oneshot_recv:
-      id: tokio::sync::oneshot::Reciever
+      id: tokio::sync::oneshot::Receiver
+      is_deref: false
       type_params:
         - T
   - oneshot_send:
       id: tokio::sync::oneshot::Sender
+      is_deref: false
       type_params:
         - T
   - String:
       id: std::string::String
+      is_deref: false
       type_params: []
+
+  - Box:
+      id: std::box::Box
+      is_deref: true
+      type_params:
+        - T
 
 callables:
   - map:
@@ -214,6 +227,20 @@ creators:
   - oneshot_recv:
       - oneshot_channel
 
+blockers:
+  - Notify:
+      - Notify_notified
+
+  - oneshot_recv:
+      - oneshot_try_recv
+
+releasers:
+  - Notify:
+      - Notify_notify_one
+
+  - oneshot_send:
+      - oneshot_send
+
 specialize:
   - Arc<HashMap<Vec<usize>, String>>:
       res: Arc
@@ -252,7 +279,7 @@ specialize:
             res: i64
             type_map: []
 
-  - oneshot::Reciever<i64>:
+  - oneshot::Receiver<i64>:
       res: oneshot_recv
       type_map:
         - T:

@@ -1,6 +1,6 @@
 use std::fmt::{self, Display, Formatter};
 
-use syn::{Block, Expr, Pat, Path, Stmt};
+use syn::{Block, Expr, Lit, Pat, Path, Stmt};
 
 use log::{debug, info, trace, warn};
 use uuid::Uuid;
@@ -44,6 +44,7 @@ pub fn callable_from_expr(
     ctx: &Context,
     info: &ResourceFile,
 ) -> bool {
+    // Precondition: If there are nested method calls, outermost one is the right one
     let trimmed_id = trim_id_by_ctxt(callable.id(), ctx);
     match expr {
         Expr::Call(expr) => {
@@ -83,7 +84,22 @@ pub fn callable_from_expr(
                     if let Some(Return::NonVoid(Arg::Res(reciever_res))) =
                         get_expr_type(expr.receiver.as_ref(), ctx, info)
                     {
-                        if reciever_res.id() == &base_res_id {
+                        let id = if reciever_res.is_deref() {
+                            let type_map = reciever_res.type_map();
+                            if type_map.len() != 1 {
+                                todo!(
+                                    "yet to handle deref trait for types with {} type params",
+                                    type_map.len()
+                                );
+                            }
+                            type_map.values().next().unwrap().id()
+                        } else {
+                            trace!("not deref");
+                            reciever_res.id()
+                        };
+                        trace!("-- {:?} {:?} --", id, base_res_id);
+                        if id == &base_res_id {
+                            trace!("ok reciver");
                             let mut args_and_types = expr.args.iter().zip(callable.args().iter());
                             let args_valid = args_and_types.all(|(expr, res)| {
                                 if let Some(expr_res) = get_expr_type(expr, ctx, info) {
@@ -100,6 +116,29 @@ pub fn callable_from_expr(
                     }
                 }
             }
+        }
+        Expr::Assign(expr) => {
+            if callable_from_expr(expr.left.as_ref(), callable, ctx, info) {
+                return true;
+            }
+            if callable_from_expr(expr.right.as_ref(), callable, ctx, info) {
+                return true;
+            }
+        }
+        Expr::AssignOp(expr) => {
+            if callable_from_expr(expr.left.as_ref(), callable, ctx, info) {
+                return true;
+            }
+            if callable_from_expr(expr.right.as_ref(), callable, ctx, info) {
+                return true;
+            }
+        }
+        Expr::Await(expr) => {
+            return callable_from_expr(expr.base.as_ref(), callable, ctx, info);
+        }
+        Expr::Let(expr) => {
+            trace!("let expr");
+            return callable_from_expr(expr.expr.as_ref(), callable, ctx, info);
         }
         _ => debug!("ignored"),
     }
@@ -350,11 +389,45 @@ fn get_expr_type(expr: &Expr, ctx: &Context, info: &ResourceFile) -> Option<Retu
                 }
             }
         }
+        Expr::Lit(expr) => {
+            let primitives = ctx.primitives();
+            match &expr.lit {
+                Lit::Str(_) => return Some(Return::NonVoid(Arg::Res(primitives["str"].clone()))),
+                Lit::ByteStr(_) => todo!("cannot handle byte-str"),
+                Lit::Byte(_) => return Some(Return::NonVoid(Arg::Res(primitives["u8"].clone()))),
+                Lit::Char(_) => return Some(Return::NonVoid(Arg::Res(primitives["char"].clone()))),
+                Lit::Int(lit) => match lit.suffix() {
+                    "u8" => return Some(Return::NonVoid(Arg::Res(primitives["u8"].clone()))),
+                    "u16" => return Some(Return::NonVoid(Arg::Res(primitives["u16"].clone()))),
+                    "u32" => return Some(Return::NonVoid(Arg::Res(primitives["u32"].clone()))),
+                    "u64" => return Some(Return::NonVoid(Arg::Res(primitives["u64"].clone()))),
+                    "u128" => return Some(Return::NonVoid(Arg::Res(primitives["u128"].clone()))),
+                    "usize" => return Some(Return::NonVoid(Arg::Res(primitives["usize"].clone()))),
+                    "i8" => return Some(Return::NonVoid(Arg::Res(primitives["i8"].clone()))),
+                    "i16" => return Some(Return::NonVoid(Arg::Res(primitives["i16"].clone()))),
+                    "i32" => return Some(Return::NonVoid(Arg::Res(primitives["i32"].clone()))),
+                    "i64" => return Some(Return::NonVoid(Arg::Res(primitives["i64"].clone()))),
+                    "i128" => return Some(Return::NonVoid(Arg::Res(primitives["i128"].clone()))),
+                    "isize" => return Some(Return::NonVoid(Arg::Res(primitives["isize"].clone()))),
+                    "" => return Some(Return::NonVoid(Arg::Res(primitives["integral"].clone()))),
+                    _ => unreachable!("invalid int suffix: \"{}\"", lit.suffix()),
+                },
+                Lit::Float(lit) => match lit.suffix() {
+                    "f32" => return Some(Return::NonVoid(Arg::Res(primitives["f32"].clone()))),
+                    "f64" => return Some(Return::NonVoid(Arg::Res(primitives["f64"].clone()))),
+                    "" => return Some(Return::NonVoid(Arg::Res(primitives["floating"].clone()))),
+                    _ => unreachable!("invalid float suffix: \"{}\""),
+                },
+                Lit::Bool(_) => return Some(Return::NonVoid(Arg::Res(primitives["bool"].clone()))),
+                Lit::Verbatim(_) => todo!("what is verbatim doing here"),
+            }
+        }
         _ => {}
     }
     None
 }
 
+#[derive(Clone)]
 pub struct Object {
     name: String,
     res: Resource,
@@ -368,6 +441,10 @@ impl Object {
             res,
             internal_uuid,
         }
+    }
+
+    pub fn internal_uuid(&self) -> Uuid {
+        self.internal_uuid
     }
 }
 

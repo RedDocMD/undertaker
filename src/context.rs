@@ -8,6 +8,9 @@ use uuid::Uuid;
 
 use crate::discover::Object;
 use crate::path;
+use crate::types::primitive_types_as_resources;
+use crate::types::Monomorphisable;
+use crate::types::Resource;
 use crate::uses::{extend_path_once, UsePath};
 
 type BlockUsePaths = Vec<UsePath>;
@@ -16,6 +19,7 @@ pub struct Context {
     use_paths: Vec<BlockUsePaths>,
     env: Environment,
     expr_uuid_store: ExprUuidStore,
+    primitives: HashMap<String, Resource>,
 }
 
 fn prelude_paths() -> Vec<UsePath> {
@@ -67,10 +71,17 @@ impl Default for Context {
 
 impl Context {
     pub fn new() -> Self {
+        let primitives = primitive_types_as_resources();
+        let mut primitive_res = HashMap::new();
+        for (key, val) in primitives {
+            let val = val.auto_monomorphise().unwrap();
+            primitive_res.insert(key, val);
+        }
         Self {
             use_paths: vec![prelude_paths()],
             env: Environment::new(),
             expr_uuid_store: ExprUuidStore::new(),
+            primitives: primitive_res,
         }
     }
 
@@ -119,6 +130,10 @@ impl Context {
     pub fn get_expr_uuid(&self, expr: Expr, idx: usize) -> Option<&Uuid> {
         let idx_expr = IndexedExpr { expr, idx };
         self.expr_uuid_store.get_binding(&idx_expr)
+    }
+
+    pub fn primitives(&self) -> &HashMap<String, Resource> {
+        &self.primitives
     }
 }
 

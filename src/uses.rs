@@ -9,7 +9,7 @@ use syn::{Block, File, Item, Stmt, UseTree};
 /// Since, sometimes use statements are written in a way that require use to know
 /// the contents of a crate, those paths are left partly defined.
 /// Eg: `use std::fs::*;`.
-#[derive(Eq, Debug, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub struct UsePath {
     components: Vec<UsePathComponent>,
 }
@@ -40,12 +40,6 @@ impl UsePath {
 impl Hash for UsePath {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.to_string().hash(state);
-    }
-}
-
-impl PartialEq for UsePath {
-    fn eq(&self, other: &Self) -> bool {
-        self.to_string() == other.to_string()
     }
 }
 

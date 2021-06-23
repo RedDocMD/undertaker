@@ -11,7 +11,10 @@ use std::{
 use linked_hash_map::LinkedHashMap;
 use yaml_rust::{Yaml, YamlLoader};
 
-use crate::uses::{self, UsePath, UsePathComponent};
+use crate::{
+    uses::{self, UsePath, UsePathComponent},
+    utils::specialize_callable,
+};
 
 pub type ResourceID = UsePath;
 
@@ -19,6 +22,7 @@ pub type ResourceID = UsePath;
 pub struct GenericResource {
     id: ResourceID,
     type_params: Vec<TypeParam>,
+    is_deref: bool,
 }
 
 #[derive(Debug, Eq, Clone)]
@@ -72,6 +76,7 @@ impl GenericResource {
         Some(Self {
             id: self.id.clone(),
             type_params: new_params,
+            is_deref: self.is_deref,
         })
     }
 
@@ -79,6 +84,7 @@ impl GenericResource {
         Self {
             id,
             type_params: vec![],
+            is_deref: false,
         }
     }
 }
@@ -97,6 +103,16 @@ impl Hash for GenericResource {
 
 impl PartialEq for Resource {
     fn eq(&self, other: &Self) -> bool {
+        if self.is_integral() && other.is_integral() {
+            if self.to_string() == "integral" || other.to_string() == "integral" {
+                return true;
+            }
+        }
+        if self.is_floating() && other.is_floating() {
+            if self.to_string() == "floating" || other.to_string() == "floating" {
+                return true;
+            }
+        }
         self.id == other.id && self.type_map == other.type_map
     }
 }
@@ -131,6 +147,7 @@ impl Monomorphisable<Resource> for GenericResource {
         Some(Resource {
             id: self.id.clone(),
             type_map,
+            is_deref: self.is_deref,
         })
     }
 }
@@ -155,6 +172,7 @@ impl Display for GenericResource {
 pub struct Resource {
     id: ResourceID,
     type_map: HashMap<TypeParam, Resource>,
+    is_deref: bool,
 }
 
 impl Resource {
@@ -164,6 +182,32 @@ impl Resource {
 
     pub fn type_map(&self) -> &HashMap<TypeParam, Resource> {
         &self.type_map
+    }
+
+    pub fn is_deref(&self) -> bool {
+        self.is_deref
+    }
+
+    fn is_integral(&self) -> bool {
+        let disp = self.to_string();
+        disp == "u8"
+            || disp == "u16"
+            || disp == "u32"
+            || disp == "u64"
+            || disp == "u128"
+            || disp == "i8"
+            || disp == "i16"
+            || disp == "i32"
+            || disp == "i64"
+            || disp == "i128"
+            || disp == "usize"
+            || disp == "isize"
+            || disp == "integral"
+    }
+
+    fn is_floating(&self) -> bool {
+        let disp = self.to_string();
+        disp == "f32" || disp == "f64" || disp == "floating"
     }
 }
 
@@ -196,6 +240,12 @@ pub struct GenericCallable {
     ret: GenericReturn,
     prop: UUIDPropagation,
     is_async: bool,
+}
+
+impl GenericCallable {
+    pub fn id(&self) -> &ResourceID {
+        &self.id
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
@@ -494,11 +544,12 @@ impl Display for Return {
     }
 }
 
-fn primitive_types_as_resources() -> HashMap<String, GenericResource> {
+pub fn primitive_types_as_resources() -> HashMap<String, GenericResource> {
     let types = vec![
         "bool", "u8", "u16", "u32", "u64", "u128", "i8", "i16", "i32", "i64", "i128", "f32", "f64",
-        "usize", "isize", "char", "str",
+        "usize", "isize", "char", "str", "integral", "floating",
     ];
+    // The last two aren't real types - placeholder types for integral and floating literals.
 
     types
         .iter()
@@ -513,23 +564,20 @@ pub struct ResourceFile {
     gen_resources: HashMap<ResourceID, GenericResource>,
     gen_callables: HashMap<ResourceID, GenericCallable>,
     gen_creators: HashMap<ResourceID, Vec<ResourceID>>,
+    gen_blockers: HashMap<ResourceID, Vec<ResourceID>>,
+    gen_releasers: HashMap<ResourceID, Vec<ResourceID>>,
     specializations: HashMap<String, Resource>,
     callables: HashSet<Callable>,
 }
 
 impl ResourceFile {
-    fn create_callables(&mut self) {
-        self.specialize_creators();
-    }
-
-    fn specialize_creators(&mut self) {
-        for spec in self.specializations.values() {
-            generate_creators_of_resource(
-                spec,
-                &self.gen_creators,
-                &self.gen_callables,
-                &mut self.callables,
-            );
+    fn generate_callables(&mut self) {
+        for gen_callable in self.gen_callables.values() {
+            for res in self.specializations.values() {
+                if let Some(callable) = specialize_callable(gen_callable, res) {
+                    self.callables.insert(callable);
+                }
+            }
         }
     }
 
@@ -549,28 +597,16 @@ impl ResourceFile {
         &self.gen_callables
     }
 
+    pub fn gen_blockers(&self) -> &HashMap<ResourceID, Vec<ResourceID>> {
+        &self.gen_blockers
+    }
+
+    pub fn gen_releasers(&self) -> &HashMap<ResourceID, Vec<ResourceID>> {
+        &self.gen_releasers
+    }
+
     pub fn gen_resources(&self) -> &HashMap<ResourceID, GenericResource> {
         &self.gen_resources
-    }
-}
-
-fn generate_creators_of_resource(
-    resource: &Resource,
-    gen_creators: &HashMap<ResourceID, Vec<ResourceID>>,
-    gen_callables: &HashMap<ResourceID, GenericCallable>,
-    callables: &mut HashSet<Callable>,
-) {
-    if let Some(spec_gen_creators) = gen_creators.get(&resource.id) {
-        for gen_creator_id in spec_gen_creators {
-            if let Some(gen_creator) = gen_callables.get(gen_creator_id) {
-                if let Some(creator) = gen_creator.monomorphise(resource.type_map.clone()) {
-                    callables.insert(creator);
-                }
-            }
-        }
-        for res in resource.type_map.values() {
-            generate_creators_of_resource(res, gen_creators, gen_callables, callables);
-        }
     }
 }
 
@@ -600,6 +636,8 @@ pub fn parse_resource_file<T: AsRef<path::Path>>(
     // Parse callables
     let mut callables = HashMap::new();
     let mut creators = HashMap::new();
+    let mut blockers = HashMap::new();
+    let mut releasers = HashMap::new();
 
     if let Some(callables_yaml) = doc.get(&Yaml::from_str("callables")) {
         let callables_yaml = callables_yaml
@@ -620,6 +658,30 @@ pub fn parse_resource_file<T: AsRef<path::Path>>(
                 let (res, creators_vec) =
                     parse_creator_from_yaml(creator_yaml, &resources, &callables)?;
                 creators.insert(res, creators_vec);
+            }
+        }
+
+        if let Some(blockers_yaml) = doc.get(&Yaml::from_str("blockers")) {
+            let blockers_yaml = blockers_yaml
+                .as_vec()
+                .ok_or_else(|| ParseErr::new("expected blockers to be an array"))?;
+
+            for blocker_yaml in blockers_yaml {
+                let (res, blocker_vec) =
+                    parse_blocker_from_yaml(blocker_yaml, &resources, &callables)?;
+                blockers.insert(res, blocker_vec);
+            }
+        }
+
+        if let Some(releasers_yaml) = doc.get(&Yaml::from_str("releasers")) {
+            let releasers_yaml = releasers_yaml
+                .as_vec()
+                .ok_or_else(|| ParseErr::new("expected releasers to be an array"))?;
+
+            for releaser_yaml in releasers_yaml {
+                let (res, releaser_vec) =
+                    parse_releaser_from_yaml(releaser_yaml, &resources, &callables)?;
+                releasers.insert(res, releaser_vec);
             }
         }
     }
@@ -650,10 +712,12 @@ pub fn parse_resource_file<T: AsRef<path::Path>>(
         gen_resources,
         gen_callables,
         gen_creators: creators,
+        gen_blockers: blockers,
+        gen_releasers: releasers,
         specializations,
         callables: HashSet::new(),
     };
-    info.create_callables();
+    info.generate_callables();
 
     Ok(info)
 }
@@ -681,6 +745,11 @@ fn parse_resource_from_yaml(yaml: &Yaml) -> Result<(String, GenericResource), Bo
         .ok_or_else(|| ParseErr::new("no type_params param of resource"))?
         .as_vec()
         .ok_or_else(|| ParseErr::new("type_params must be a list"))?;
+    let is_deref = value
+        .get(&Yaml::from_str("is_deref"))
+        .ok_or_else(|| ParseErr::new("no is_deref param of resource"))?
+        .as_bool()
+        .ok_or_else(|| ParseErr::new("expected is_deref to be a bool"))?;
 
     let id = uses::convert_to_path(&id_str.split("::").collect::<Vec<&str>>())
         .ok_or_else(|| ParseErr(format!("invalid id: {}", id_str)))?;
@@ -689,7 +758,14 @@ fn parse_resource_from_yaml(yaml: &Yaml) -> Result<(String, GenericResource), Bo
         .map(|param| TypeParam::new(param.as_str().expect("type param must be a string")))
         .collect();
 
-    Ok((name.to_string(), GenericResource { id, type_params }))
+    Ok((
+        name.to_string(),
+        GenericResource {
+            id,
+            type_params,
+            is_deref,
+        },
+    ))
 }
 
 fn parse_callable_from_yaml(
@@ -940,6 +1016,90 @@ fn parse_creator_from_yaml(
         .collect();
 
     Ok((res_id, creator_ids))
+}
+
+fn parse_blocker_from_yaml(
+    yaml: &Yaml,
+    res_map: &HashMap<String, GenericResource>,
+    call_map: &HashMap<String, GenericCallable>,
+) -> Result<(ResourceID, Vec<ResourceID>), Box<dyn Error>> {
+    let hash = yaml
+        .as_hash()
+        .ok_or_else(|| ParseErr::new("expected each blocker to be a hash"))?;
+    if hash.len() != 1 {
+        return Err(Box::new(ParseErr::new("invalid blocker format")));
+    }
+    let key = hash.keys().next().unwrap();
+    let value = &hash[key];
+    let name = key
+        .as_str()
+        .ok_or_else(|| ParseErr::new("expected res name of blocker to be a string"))?;
+    if !res_map.contains_key(name) {
+        return Err(Box::new(ParseErr(format!(
+            "{} is not defined as a resource",
+            name
+        ))));
+    }
+    let res_id = res_map[name].id.clone();
+
+    let blockers_vec = value
+        .as_vec()
+        .ok_or_else(|| ParseErr::new("expected blocker names to be a list"))?;
+    let blocker_ids: Vec<ResourceID> = blockers_vec
+        .iter()
+        .map(|item| {
+            let call_name = item.as_str().expect("expected blocker name to be a string");
+            if !call_map.contains_key(call_name) {
+                panic!("{} is not defined as a callable", call_name);
+            }
+            call_map[call_name].id.clone()
+        })
+        .collect();
+
+    Ok((res_id, blocker_ids))
+}
+
+fn parse_releaser_from_yaml(
+    yaml: &Yaml,
+    res_map: &HashMap<String, GenericResource>,
+    call_map: &HashMap<String, GenericCallable>,
+) -> Result<(ResourceID, Vec<ResourceID>), Box<dyn Error>> {
+    let hash = yaml
+        .as_hash()
+        .ok_or_else(|| ParseErr::new("expected each releaser to be a hash"))?;
+    if hash.len() != 1 {
+        return Err(Box::new(ParseErr::new("invalid releaser format")));
+    }
+    let key = hash.keys().next().unwrap();
+    let value = &hash[key];
+    let name = key
+        .as_str()
+        .ok_or_else(|| ParseErr::new("expected res name of releaser to be a string"))?;
+    if !res_map.contains_key(name) {
+        return Err(Box::new(ParseErr(format!(
+            "{} is not defined as a resource",
+            name
+        ))));
+    }
+    let res_id = res_map[name].id.clone();
+
+    let releasers_vec = value
+        .as_vec()
+        .ok_or_else(|| ParseErr::new("expected releaser names to be a list"))?;
+    let releaser_ids: Vec<ResourceID> = releasers_vec
+        .iter()
+        .map(|item| {
+            let call_name = item
+                .as_str()
+                .expect("expected releaser name to be a string");
+            if !call_map.contains_key(call_name) {
+                panic!("{} is not defined as a callable", call_name);
+            }
+            call_map[call_name].id.clone()
+        })
+        .collect();
+
+    Ok((res_id, releaser_ids))
 }
 
 fn parse_specialization_from_yaml(
