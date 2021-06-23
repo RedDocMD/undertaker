@@ -123,7 +123,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
 
                 let mut cfg_blockers = Vec::new();
-
                 for gen_blockers in info.gen_blockers().values() {
                     for gen_blocker in gen_blockers {
                         for callable in info.callables() {
@@ -132,6 +131,28 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 for cfg in &cfgs {
                                     let obs = callable_from_cfg(cfg, &callable, &ctx, &info);
                                     cfg_blockers.push(obs);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                let mut cfg_releasers: HashMap<Uuid, Vec<(Object, CFGNodeStrongPtr<'_>)>> =
+                    HashMap::new();
+                for gen_releasers in info.gen_releasers().values() {
+                    for gen_releaser in gen_releasers {
+                        for callable in info.callables() {
+                            if callable.id() == gen_releaser {
+                                debug!("Trying releaser {}", callable);
+                                for cfg in &cfgs {
+                                    let obs = callable_from_cfg(cfg, &callable, &ctx, &info);
+                                    for (uuid, mut vals) in obs {
+                                        if let Some(old_vals) = cfg_releasers.get_mut(&uuid) {
+                                            old_vals.append(&mut vals);
+                                        } else {
+                                            cfg_releasers.insert(uuid, vals);
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -197,8 +218,7 @@ fn callable_from_cfg<'ast>(
         if callable_from_expr(expr, callable, ctx, info) {
             let ob = object_from_call(expr, callable, ctx).expect("expected to find object here");
             let uuid = ob.internal_uuid();
-            if calls.contains_key(&uuid) {
-                let obs = calls.get_mut(&uuid).unwrap();
+            if let Some(obs) = calls.get_mut(&uuid) {
                 obs.push((ob, node_cpy));
             } else {
                 calls.insert(uuid, vec![(ob, node_cpy)]);

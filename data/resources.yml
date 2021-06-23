@@ -236,7 +236,7 @@ blockers:
 
 releasers:
   - Notify:
-      - Notify_notified
+      - Notify_notify_one
 
   - oneshot_send:
       - oneshot_send
