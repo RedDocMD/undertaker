@@ -43,6 +43,19 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         println!();
     }
+    println!("\n{}", "Generic Releasers:".yellow());
+    for (res, releasers) in info.gen_releasers() {
+        let res = &info.gen_resources()[res];
+        print!("{} => ", res);
+        for (idx, releaser) in releasers.iter().enumerate() {
+            let releaser = &info.gen_callables()[releaser];
+            print!("{}", releaser);
+            if idx != releasers.len() - 1 {
+                print!(", ");
+            }
+        }
+        println!();
+    }
     println!("\n{}", "Resources:".yellow());
     for (name, res) in info.specializations() {
         println!("{} => {}", name, res);

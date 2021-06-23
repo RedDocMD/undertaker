@@ -234,6 +234,13 @@ blockers:
   - oneshot_recv:
       - oneshot_try_recv
 
+releasers:
+  - Notify:
+      - Notify_notified
+
+  - oneshot_send:
+      - oneshot_send
+
 specialize:
   - Arc<HashMap<Vec<usize>, String>>:
       res: Arc

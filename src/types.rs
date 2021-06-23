@@ -532,6 +532,7 @@ pub struct ResourceFile {
     gen_callables: HashMap<ResourceID, GenericCallable>,
     gen_creators: HashMap<ResourceID, Vec<ResourceID>>,
     gen_blockers: HashMap<ResourceID, Vec<ResourceID>>,
+    gen_releasers: HashMap<ResourceID, Vec<ResourceID>>,
     specializations: HashMap<String, Resource>,
     callables: HashSet<Callable>,
 }
@@ -567,6 +568,10 @@ impl ResourceFile {
         &self.gen_blockers
     }
 
+    pub fn gen_releasers(&self) -> &HashMap<ResourceID, Vec<ResourceID>> {
+        &self.gen_releasers
+    }
+
     pub fn gen_resources(&self) -> &HashMap<ResourceID, GenericResource> {
         &self.gen_resources
     }
@@ -599,6 +604,7 @@ pub fn parse_resource_file<T: AsRef<path::Path>>(
     let mut callables = HashMap::new();
     let mut creators = HashMap::new();
     let mut blockers = HashMap::new();
+    let mut releasers = HashMap::new();
 
     if let Some(callables_yaml) = doc.get(&Yaml::from_str("callables")) {
         let callables_yaml = callables_yaml
@@ -633,6 +639,18 @@ pub fn parse_resource_file<T: AsRef<path::Path>>(
                 blockers.insert(res, blocker_vec);
             }
         }
+
+        if let Some(releasers_yaml) = doc.get(&Yaml::from_str("releasers")) {
+            let releasers_yaml = releasers_yaml
+                .as_vec()
+                .ok_or_else(|| ParseErr::new("expected releasers to be an array"))?;
+
+            for releaser_yaml in releasers_yaml {
+                let (res, releaser_vec) =
+                    parse_releaser_from_yaml(releaser_yaml, &resources, &callables)?;
+                releasers.insert(res, releaser_vec);
+            }
+        }
     }
 
     let mut specializations = HashMap::new();
@@ -662,6 +680,7 @@ pub fn parse_resource_file<T: AsRef<path::Path>>(
         gen_callables,
         gen_creators: creators,
         gen_blockers: blockers,
+        gen_releasers: releasers,
         specializations,
         callables: HashSet::new(),
     };
@@ -1005,6 +1024,49 @@ fn parse_blocker_from_yaml(
         .collect();
 
     Ok((res_id, blocker_ids))
+}
+
+fn parse_releaser_from_yaml(
+    yaml: &Yaml,
+    res_map: &HashMap<String, GenericResource>,
+    call_map: &HashMap<String, GenericCallable>,
+) -> Result<(ResourceID, Vec<ResourceID>), Box<dyn Error>> {
+    let hash = yaml
+        .as_hash()
+        .ok_or_else(|| ParseErr::new("expected each releaser to be a hash"))?;
+    if hash.len() != 1 {
+        return Err(Box::new(ParseErr::new("invalid releaser format")));
+    }
+    let key = hash.keys().next().unwrap();
+    let value = &hash[key];
+    let name = key
+        .as_str()
+        .ok_or_else(|| ParseErr::new("expected res name of releaser to be a string"))?;
+    if !res_map.contains_key(name) {
+        return Err(Box::new(ParseErr(format!(
+            "{} is not defined as a resource",
+            name
+        ))));
+    }
+    let res_id = res_map[name].id.clone();
+
+    let releasers_vec = value
+        .as_vec()
+        .ok_or_else(|| ParseErr::new("expected releaser names to be a list"))?;
+    let releaser_ids: Vec<ResourceID> = releasers_vec
+        .iter()
+        .map(|item| {
+            let call_name = item
+                .as_str()
+                .expect("expected releaser name to be a string");
+            if !call_map.contains_key(call_name) {
+                panic!("{} is not defined as a callable", call_name);
+            }
+            call_map[call_name].id.clone()
+        })
+        .collect();
+
+    Ok((res_id, releaser_ids))
 }
 
 fn parse_specialization_from_yaml(
