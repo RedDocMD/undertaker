@@ -103,15 +103,17 @@ impl Hash for GenericResource {
 
 impl PartialEq for Resource {
     fn eq(&self, other: &Self) -> bool {
-        if self.is_integral() && other.is_integral() {
-            if self.to_string() == "integral" || other.to_string() == "integral" {
-                return true;
-            }
+        if self.is_integral()
+            && other.is_integral()
+            && (self.to_string() == "integral" || other.to_string() == "integral")
+        {
+            return true;
         }
-        if self.is_floating() && other.is_floating() {
-            if self.to_string() == "floating" || other.to_string() == "floating" {
-                return true;
-            }
+        if self.is_floating()
+            && other.is_floating()
+            && (self.to_string() == "floating" || other.to_string() == "floating")
+        {
+            return true;
         }
         self.id == other.id && self.type_map == other.type_map
     }
