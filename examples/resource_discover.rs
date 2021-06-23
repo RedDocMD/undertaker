@@ -1,11 +1,11 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     env,
     error::Error,
     fs::File,
     io::prelude::*,
     process::{Command, Stdio},
-    rc::Rc,
+    rc::{Rc, Weak},
 };
 
 use colored::*;
@@ -122,7 +122,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                     create_cfg_pdf(cfg, &path);
                 }
 
-                let mut cfg_blockers = Vec::new();
+                let mut cfg_blockers: HashMap<Uuid, Vec<(Object, CFGNodeStrongPtr<'_>)>> =
+                    HashMap::new();
                 for gen_blockers in info.gen_blockers().values() {
                     for gen_blocker in gen_blockers {
                         for callable in info.callables() {
@@ -130,7 +131,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 debug!("Trying blocker {}", callable);
                                 for cfg in &cfgs {
                                     let obs = callable_from_cfg(cfg, &callable, &ctx, &info);
-                                    cfg_blockers.push(obs);
+                                    for (uuid, mut vals) in obs {
+                                        if let Some(old_vals) = cfg_blockers.get_mut(&uuid) {
+                                            old_vals.append(&mut vals);
+                                        } else {
+                                            cfg_blockers.insert(uuid, vals);
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -158,6 +165,18 @@ fn main() -> Result<(), Box<dyn Error>> {
                         }
                     }
                 }
+
+                for (uuid, blockers) in &cfg_blockers {
+                    if let Some(releasers) = cfg_releasers.get(uuid) {
+                        for (_, releaser) in releasers {
+                            for (_, blocker) in blockers {
+                                releaser.borrow_mut().add_dep(Rc::downgrade(blocker));
+                            }
+                        }
+                    }
+                }
+
+                detect_dependency_cycle(cfgs[0].head());
 
                 ctx.exit_block();
                 break;
@@ -281,4 +300,53 @@ fn object_from_call(expr: &Expr, callable: &Callable, ctx: &Context) -> Option<O
         }
         _ => None,
     }
+}
+
+fn detect_dependency_cycle<'ast>(start_node: &CFGNodeStrongPtr<'ast>) {
+    #[derive(PartialEq, Eq, Clone, Copy)]
+    enum NodeState {
+        Unvisited,
+        Visited,
+        Explored,
+    }
+
+    impl Default for &NodeState {
+        fn default() -> Self {
+            &NodeState::Unvisited
+        }
+    }
+
+    fn dfs<'a>(node: CFGNodeStrongPtr<'a>, states: &mut HashMap<Uuid, NodeState>) {
+        let node = node.borrow();
+        let uuid = node.uuid();
+        states.insert(uuid, NodeState::Visited);
+        let next_nodes = node
+            .succ()
+            .iter()
+            .filter_map(|ptr| {
+                if let CFGNodePtr::Strong(ptr) = ptr {
+                    Some(Rc::clone(ptr))
+                } else {
+                    None
+                }
+            })
+            .chain(
+                node.deps()
+                    .iter()
+                    .map(|ptr| Weak::upgrade(ptr).expect("expected cfg to be alive")),
+            );
+        for next_node in next_nodes {
+            let uuid = next_node.borrow().uuid();
+            let state = states.get(&uuid).unwrap_or_default();
+            if *state == NodeState::Unvisited {
+                dfs(Rc::clone(&next_node), states);
+            } else if *state == NodeState::Visited {
+                // Cycle!!
+                println!("{}", "Deadlock Detected".red());
+            }
+        }
+        states.insert(uuid, NodeState::Explored);
+    }
+
+    dfs(Rc::clone(start_node), &mut HashMap::new());
 }

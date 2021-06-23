@@ -29,6 +29,7 @@ pub struct CFGNode<'ast> {
     expr: CFGExpr<'ast>,
     pred: Vec<CFGNodeWeakPtr<'ast>>,
     succ: Vec<CFGNodePtr<'ast>>,
+    deps: Vec<CFGNodeWeakPtr<'ast>>,
     uuid: Uuid,
 }
 
@@ -38,6 +39,7 @@ impl<'ast> CFGNode<'ast> {
             expr,
             pred: Vec::new(),
             succ: Vec::new(),
+            deps: Vec::new(),
             uuid: Uuid::new_v4(),
         }))
     }
@@ -63,6 +65,18 @@ impl<'ast> CFGNode<'ast> {
 
     pub fn succ(&self) -> &[CFGNodePtr<'ast>] {
         self.succ.as_slice()
+    }
+
+    pub fn deps(&self) -> &[CFGNodeWeakPtr<'ast>] {
+        self.deps.as_slice()
+    }
+
+    pub fn add_dep(&mut self, dep: CFGNodeWeakPtr<'ast>) {
+        self.deps.push(dep);
+    }
+
+    pub fn uuid(&self) -> Uuid {
+        self.uuid
     }
 }
 
