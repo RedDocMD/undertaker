@@ -7,7 +7,6 @@ use uuid::Uuid;
 
 use crate::{
     context::Context,
-    resource::ResourceID,
     types::{
         trim_common, Arg, Callable, CallableType, Resource, ResourceFile, Return, UUIDPropagation,
     },
@@ -15,6 +14,10 @@ use crate::{
 };
 
 use colored::*;
+
+/// The fully-qualified path to a resource.
+/// A resource may be a struct or a function.
+pub type ResourceID = UsePath;
 
 fn trim_id_by_ctxt(id: &ResourceID, ctx: &Context) -> ResourceID {
     for path in ctx.iter() {

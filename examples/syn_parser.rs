@@ -1,4 +1,3 @@
-use std::hash::Hash;
 use std::io::prelude::*;
 use std::{env, fs::File, process};
 

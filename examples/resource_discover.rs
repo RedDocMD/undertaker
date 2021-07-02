@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     env,
     error::Error,
     fs::File,
@@ -96,17 +96,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let blocks = async_in_block(&func.block);
                 println!("Found {} blocks", blocks.len().to_string().yellow());
 
-                // let dep_graphs: Vec<Rc<DepGraph>> = blocks
-                //     .into_iter()
-                //     .map(|code| match code {
-                //         AsyncCode::Block(block) => DepGraph::from_block(&block.block),
-                //         AsyncCode::Closure(closure) => DepGraph::from_expr(*closure.body),
-                //     })
-                //     .collect();
-                // println!("\n{}", "DepGraphs:".cyan());
-                // for dep_graph in &dep_graphs {
-                //     println!("{}", dep_graph);
-                // }
                 let cfgs: Vec<CFGBlock<'_>> = blocks
                     .iter()
                     .map(|code| match code {
