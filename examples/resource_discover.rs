@@ -13,7 +13,7 @@ use log::{debug, info, warn};
 use syn::{Expr, Item};
 use undertaker::{
     async_detect::{async_in_block, AsyncCode},
-    cfg::{CFGBlock, CFGNodePtr, CFGNodeStrongPtr},
+    cfg::{CFGBlock, CFGNodePtr, CFGNodeStrongPtr, DotDescription},
     context::Context,
     discover::{callable_from_expr, creator_from_block, Object},
     types::{parse_resource_file, Callable, CallableType, Monomorphisable, ResourceFile},
@@ -167,6 +167,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                 detect_dependency_cycle(cfgs[0].head());
 
+                create_deps_pdf(cfgs.as_slice(), "dot/cycle.pdf");
+
                 ctx.exit_block();
                 break;
             }
@@ -182,8 +184,70 @@ fn create_cfg_pdf(cfg: &CFGBlock<'_>, path: &str) {
         .stdin(Stdio::piped())
         .spawn()
         .expect("failed to get dot command");
-    let dot_string = cfg.dot_description();
+    let dot_string = cfg.dot_graph();
     let mut stdin = proc.stdin.take().expect("failed to open stdin");
+    std::thread::spawn(move || {
+        stdin
+            .write_all(dot_string.as_bytes())
+            .expect("failed to write to stdin");
+    });
+    let exit = proc.wait().unwrap();
+    if exit.success() {
+        info!("Created DOT graph in {}", path);
+    } else {
+        warn!("Failed to create DOT graph");
+    }
+}
+
+fn create_deps_pdf(blocks: &[CFGBlock<'_>], path: &str) {
+    let mut proc = Command::new("dot")
+        .args(&["-Tpdf", "-o", path])
+        .stdin(Stdio::piped())
+        .spawn()
+        .expect("failed to get dot command");
+    let mut stdin = proc.stdin.take().expect("failed to open stdin");
+
+    let mut dot_string = String::from("digraph G{\n\trankdir=TB;\n");
+    for (idx, block) in blocks.iter().enumerate() {
+        use std::fmt::Write;
+
+        let DotDescription {
+            edge_desc,
+            node_desc,
+        } = block.dot_descriptions();
+        writeln!(
+            &mut dot_string,
+            "subgraph cluster{} {{\n{}{}}}\n",
+            idx, edge_desc, node_desc
+        )
+        .expect("expected to be able to write to string");
+    }
+    for block in blocks {
+        use std::fmt::Write;
+
+        let mut stack = vec![Rc::clone(block.head())];
+        while !stack.is_empty() {
+            let node = stack.pop().unwrap();
+            let node = node.as_ref().borrow();
+            for dep in node.deps() {
+                let dep = Weak::upgrade(dep).unwrap();
+                writeln!(
+                    &mut dot_string,
+                    "\t{} -> {} [color=\"red\"]",
+                    node.node_label(),
+                    dep.as_ref().borrow().node_label()
+                )
+                .expect("expected to be able to write to string");
+            }
+            for s in node.succ() {
+                if let CFGNodePtr::Strong(s) = s {
+                    stack.push(Rc::clone(s));
+                }
+            }
+        }
+    }
+    dot_string.push_str("}\n");
+
     std::thread::spawn(move || {
         stdin
             .write_all(dot_string.as_bytes())

@@ -44,7 +44,7 @@ impl<'ast> CFGNode<'ast> {
         }))
     }
 
-    fn node_label(&self) -> String {
+    pub fn node_label(&self) -> String {
         let simp = self.uuid.to_simple_ref();
         let mut buf = [0_u8; SimpleRef::LENGTH];
         let rep = String::from(simp.encode_lower(&mut buf));
@@ -364,7 +364,7 @@ impl<'ast> CFGBlock<'ast> {
         }
     }
 
-    pub fn dot_description(&self) -> String {
+    pub fn dot_descriptions(&self) -> DotDescription {
         let mut node_desc = String::new();
         let mut edge_desc = String::new();
         let mut stack = Vec::new();
@@ -411,6 +411,23 @@ impl<'ast> CFGBlock<'ast> {
                 }
             }
         }
+        DotDescription {
+            edge_desc,
+            node_desc,
+        }
+    }
+
+    pub fn dot_graph(&self) -> String {
+        let DotDescription {
+            edge_desc,
+            node_desc,
+        } = self.dot_descriptions();
         format!("digraph G {{\n{}{}}}\n", edge_desc, node_desc)
     }
+}
+
+// Both desc mut end in newline
+pub struct DotDescription {
+    pub edge_desc: String,
+    pub node_desc: String,
 }
